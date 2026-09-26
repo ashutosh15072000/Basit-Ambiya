@@ -531,6 +531,214 @@ app.post('/api/wishes', async (req: Request, res: Response) => {
   }
 });
 
+// Admin Delete RSVP Endpoint
+app.delete('/api/rsvp/:id', async (req: Request, res: Response) => {
+  const isAdmin =
+    req.query.admin === 'rsvp' ||
+    req.query.host === 'rsvp' ||
+    req.headers['x-admin-rsvp'] === 'true';
+
+  if (!isAdmin) {
+    return res.status(403).json({ success: false, error: 'Unauthorized: Admin access required (?admin=rsvp)' });
+  }
+
+  try {
+    const { id } = req.params;
+    const current = loadRsvps();
+    const existingIndex = current.findIndex((r) => r.id === id);
+
+    if (existingIndex === -1) {
+      return res.status(404).json({ success: false, error: 'RSVP record not found' });
+    }
+
+    const deletedEntry = current[existingIndex];
+    const updatedRsvps = current.filter((r) => r.id !== id);
+    saveRsvps(updatedRsvps);
+
+    // Also remove any corresponding wish from this RSVP
+    const currentWishes = loadWishes();
+    const wishId = `wish-rsvp-${id}`;
+    const updatedWishes = currentWishes.filter(
+      (w) =>
+        w.id !== wishId &&
+        !(w.name.toLowerCase() === deletedEntry.guest_name.toLowerCase() && w.message === deletedEntry.message)
+    );
+    if (updatedWishes.length !== currentWishes.length) {
+      saveWishes(updatedWishes);
+    }
+
+    // Auto-commit to GitHub if env vars are present
+    const ghToken = process.env.GITHUB_TOKEN;
+    const ghOwner = process.env.GITHUB_OWNER;
+    const ghRepo = process.env.GITHUB_REPO;
+    const ghBranch = process.env.GITHUB_BRANCH || 'main';
+
+    let githubStatus: string | null = null;
+    if (ghToken && ghOwner && ghRepo) {
+      try {
+        const filePath = 'wedding-rsvps.xlsx';
+        const buffer = fs.readFileSync(EXCEL_ROOT_PATH);
+        const base64 = buffer.toString('base64');
+
+        let sha: string | undefined = undefined;
+        try {
+          const getRes = await fetch(
+            `https://api.github.com/repos/${ghOwner}/${ghRepo}/contents/${filePath}?ref=${ghBranch}`,
+            {
+              headers: {
+                Authorization: `Bearer ${ghToken}`,
+                Accept: 'application/vnd.github.v3+json',
+              },
+            }
+          );
+          if (getRes.ok) {
+            const data = (await getRes.json()) as any;
+            sha = data.sha;
+          }
+        } catch {}
+
+        const putRes = await fetch(
+          `https://api.github.com/repos/${ghOwner}/${ghRepo}/contents/${filePath}`,
+          {
+            method: 'PUT',
+            headers: {
+              Authorization: `Bearer ${ghToken}`,
+              Accept: 'application/vnd.github.v3+json',
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              message: `Admin delete RSVP: ${deletedEntry.guest_name}`,
+              content: base64,
+              sha,
+              branch: ghBranch,
+            }),
+          }
+        );
+
+        if (putRes.ok) {
+          githubStatus = 'Updated Excel on GitHub';
+        }
+      } catch (ghErr) {
+        console.warn('Server GitHub delete error:', ghErr);
+      }
+    }
+
+    return res.json({
+      success: true,
+      message: `RSVP record for ${deletedEntry.guest_name} deleted successfully`,
+      githubStatus,
+    });
+  } catch (err: any) {
+    console.error('API DELETE /api/rsvp error:', err);
+    return res.status(500).json({ success: false, error: err.message || 'Server error' });
+  }
+});
+
+// Admin Delete Wish Endpoint
+app.delete('/api/wishes/:id', async (req: Request, res: Response) => {
+  const isAdmin =
+    req.query.admin === 'rsvp' ||
+    req.query.host === 'rsvp' ||
+    req.headers['x-admin-rsvp'] === 'true';
+
+  if (!isAdmin) {
+    return res.status(403).json({ success: false, error: 'Unauthorized: Admin access required (?admin=rsvp)' });
+  }
+
+  try {
+    const { id } = req.params;
+    const currentWishes = loadWishes();
+    const existing = currentWishes.find((w) => w.id === id);
+
+    if (!existing) {
+      return res.status(404).json({ success: false, error: 'Wish message not found' });
+    }
+
+    const updatedWishes = currentWishes.filter((w) => w.id !== id);
+    saveWishes(updatedWishes);
+
+    // If this wish was linked to an RSVP response, clear that RSVP's message
+    const currentRsvps = loadRsvps();
+    let rsvpsModified = false;
+    for (const r of currentRsvps) {
+      if (
+        r.id === id.replace('wish-rsvp-', '') ||
+        (r.guest_name.toLowerCase() === existing.name.toLowerCase() && r.message === existing.message)
+      ) {
+        r.message = null;
+        rsvpsModified = true;
+      }
+    }
+    if (rsvpsModified) {
+      saveRsvps(currentRsvps);
+    }
+
+    // Push updated wishes to GitHub if configured
+    const ghToken = process.env.GITHUB_TOKEN;
+    const ghOwner = process.env.GITHUB_OWNER;
+    const ghRepo = process.env.GITHUB_REPO;
+    const ghBranch = process.env.GITHUB_BRANCH || 'main';
+
+    let githubStatus: string | null = null;
+    if (ghToken && ghOwner && ghRepo) {
+      try {
+        const jsonContent = JSON.stringify(updatedWishes, null, 2);
+        const base64 = Buffer.from(jsonContent, 'utf-8').toString('base64');
+        const targetPaths = ['public/wedding-wishes.json', 'wedding-wishes.json'];
+
+        for (const filePath of targetPaths) {
+          let sha: string | undefined = undefined;
+          try {
+            const getRes = await fetch(
+              `https://api.github.com/repos/${ghOwner}/${ghRepo}/contents/${filePath}?ref=${ghBranch}`,
+              {
+                headers: {
+                  Authorization: `Bearer ${ghToken}`,
+                  Accept: 'application/vnd.github.v3+json',
+                },
+              }
+            );
+            if (getRes.ok) {
+              const fileData = (await getRes.json()) as any;
+              sha = fileData.sha;
+            }
+          } catch {}
+
+          await fetch(
+            `https://api.github.com/repos/${ghOwner}/${ghRepo}/contents/${filePath}`,
+            {
+              method: 'PUT',
+              headers: {
+                Authorization: `Bearer ${ghToken}`,
+                Accept: 'application/vnd.github.v3+json',
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                message: `Delete wedding wish: Message by ${existing.name}`,
+                content: base64,
+                sha,
+                branch: ghBranch,
+              }),
+            }
+          );
+        }
+        githubStatus = 'Updated wishes on GitHub';
+      } catch (ghErr) {
+        console.warn('Server wishes GitHub delete error:', ghErr);
+      }
+    }
+
+    return res.json({
+      success: true,
+      message: `Message by ${existing.name} deleted successfully`,
+      githubStatus,
+    });
+  } catch (err: any) {
+    console.error('API DELETE /api/wishes error:', err);
+    return res.status(500).json({ success: false, error: err.message || 'Server error' });
+  }
+});
+
 async function startServer() {
   if (!IS_PROD) {
     // In development, mount Vite middleware

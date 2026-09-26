@@ -269,7 +269,7 @@ export default function App() {
           </section>
 
           {/* Guest Book & RSVP Wishes Section (Replaces Cherished Moments photo frames) */}
-          <RsvpWishesSection />
+          <RsvpWishesSection isAdmin={isAdminMode} />
 
           {/* Awaiting your noble presence Section */}
           <section className="relative py-24 px-6 bg-cream text-center overflow-hidden">

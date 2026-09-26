@@ -14,6 +14,26 @@ export interface WeddingWish {
 
 const STORAGE_KEY_WISHES = 'wedding_guest_wishes';
 const STORAGE_KEY_LIKES = 'wedding_wishes_liked';
+const STORAGE_KEY_DELETED_WISHES = 'wedding_deleted_wish_ids';
+
+export function getDeletedWishIds(): Set<string> {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_DELETED_WISHES);
+    if (raw) {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr)) return new Set(arr);
+    }
+  } catch {}
+  return new Set();
+}
+
+export function markWishAsDeleted(id: string): void {
+  const ids = getDeletedWishIds();
+  ids.add(id);
+  try {
+    localStorage.setItem(STORAGE_KEY_DELETED_WISHES, JSON.stringify(Array.from(ids)));
+  } catch {}
+}
 
 // Initial fallback wishes in case network is completely offline
 const INITIAL_FALLBACK_WISHES: WeddingWish[] = [
@@ -85,6 +105,7 @@ function toBase64Utf8(str: string): string {
  * so they are immediately visible in the message display section.
  */
 export function extractWishesFromRsvps(): WeddingWish[] {
+  const deletedIds = getDeletedWishIds();
   try {
     const rawRsvps = localStorage.getItem('wedding_rsvps');
     if (!rawRsvps) return [];
@@ -113,7 +134,8 @@ export function extractWishesFromRsvps(): WeddingWish[] {
           likes: 1,
           attending: r.attending || 'yes',
         };
-      });
+      })
+      .filter((w) => !deletedIds.has(w.id));
   } catch (err) {
     console.error('Error extracting wishes from stored RSVPs:', err);
     return [];
@@ -124,10 +146,13 @@ export function extractWishesFromRsvps(): WeddingWish[] {
  * Get locally stored wishes merged with any messages sent through RSVP forms
  */
 export function getStoredWishes(): WeddingWish[] {
+  const deletedIds = getDeletedWishIds();
   const wishesMap = new Map<string, WeddingWish>();
 
   // 1. Initial fallbacks
-  INITIAL_FALLBACK_WISHES.forEach((w) => wishesMap.set(w.id, w));
+  INITIAL_FALLBACK_WISHES.forEach((w) => {
+    if (!deletedIds.has(w.id)) wishesMap.set(w.id, w);
+  });
 
   // 2. Direct wishes in localStorage
   try {
@@ -135,7 +160,9 @@ export function getStoredWishes(): WeddingWish[] {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
-        parsed.forEach((w) => wishesMap.set(w.id, w));
+        parsed.forEach((w) => {
+          if (!deletedIds.has(w.id)) wishesMap.set(w.id, w);
+        });
       }
     }
   } catch (err) {
@@ -143,7 +170,9 @@ export function getStoredWishes(): WeddingWish[] {
   }
 
   // 3. Messages sent through RSVP forms
-  extractWishesFromRsvps().forEach((w) => wishesMap.set(w.id, w));
+  extractWishesFromRsvps().forEach((w) => {
+    if (!deletedIds.has(w.id)) wishesMap.set(w.id, w);
+  });
 
   return Array.from(wishesMap.values()).sort((a, b) => {
     const timeA = a.timestamp ? new Date(a.timestamp).getTime() : 0;
@@ -228,19 +257,28 @@ export async function fetchAllPublicWishes(): Promise<WeddingWish[]> {
   }
 
   // 4. Merge fetched wishes with local wishes, preserving any newly posted un-synced wishes
+  const deletedIds = getDeletedWishIds();
   const combinedMap = new Map<string, WeddingWish>();
 
   // Add initial fallbacks first
-  INITIAL_FALLBACK_WISHES.forEach((w) => combinedMap.set(w.id, w));
+  INITIAL_FALLBACK_WISHES.forEach((w) => {
+    if (!deletedIds.has(w.id)) combinedMap.set(w.id, w);
+  });
 
   // Add fetched wishes from GitHub / public JSON
-  fetchedWishes.forEach((w) => combinedMap.set(w.id, w));
+  fetchedWishes.forEach((w) => {
+    if (!deletedIds.has(w.id)) combinedMap.set(w.id, w);
+  });
 
   // Add locally posted wishes (to not lose user's immediate post)
-  localWishes.forEach((w) => combinedMap.set(w.id, w));
+  localWishes.forEach((w) => {
+    if (!deletedIds.has(w.id)) combinedMap.set(w.id, w);
+  });
 
   // Add messages from all submitted RSVPs
-  extractWishesFromRsvps().forEach((w) => combinedMap.set(w.id, w));
+  extractWishesFromRsvps().forEach((w) => {
+    if (!deletedIds.has(w.id)) combinedMap.set(w.id, w);
+  });
 
   const merged = Array.from(combinedMap.values()).sort((a, b) => {
     const timeA = a.timestamp ? new Date(a.timestamp).getTime() : 0;
@@ -405,4 +443,74 @@ export async function addWeddingWish(entry: {
   }
 
   return { wish: newWish, githubStatus };
+}
+
+/**
+ * Deletes a wedding wish message (Admin only)
+ * Updates local cache, notifies backend /api/wishes/:id, and syncs updated JSON to GitHub.
+ */
+export async function deleteWeddingWish(id: string): Promise<{
+  success: boolean;
+  message: string;
+  githubStatus?: string;
+}> {
+  markWishAsDeleted(id);
+
+  // Remove from localStorage
+  const current = getStoredWishes().filter((w) => w.id !== id);
+  saveWishesLocally(current);
+
+  // If this wish was linked to an RSVP entry in localStorage, clear the message so it doesn't reappear
+  try {
+    const rawRsvps = localStorage.getItem('wedding_rsvps');
+    if (rawRsvps) {
+      const rsvps = JSON.parse(rawRsvps);
+      if (Array.isArray(rsvps)) {
+        let changed = false;
+        const cleanedRsvps = rsvps.map((r: any) => {
+          const rsvpWishId = `wish-rsvp-${(r.guest_name || 'guest').toLowerCase().replace(/[^a-z0-9]/g, '-')}-${r.submitted_at || r.id}`;
+          if (rsvpWishId === id || r.id === id.replace('wish-rsvp-', '')) {
+            changed = true;
+            return { ...r, message: null };
+          }
+          return r;
+        });
+        if (changed) {
+          localStorage.setItem('wedding_rsvps', JSON.stringify(cleanedRsvps));
+        }
+      }
+    }
+  } catch {}
+
+  // Request backend server to delete and commit
+  try {
+    await fetch(`/api/wishes/${id}?admin=rsvp`, {
+      method: 'DELETE',
+      headers: {
+        'x-admin-rsvp': 'true',
+      },
+    }).catch(() => {});
+  } catch {}
+
+  // Commit updated wishes to GitHub if configured
+  const ghConfig = getGitHubConfig();
+  let githubStatus: string | undefined;
+  if (ghConfig.enabled && ghConfig.token && ghConfig.owner && ghConfig.repo) {
+    try {
+      const res = await pushWishesToGitHub(current, ghConfig);
+      if (res.success) {
+        githubStatus = res.commitUrl || 'Deletion synced to GitHub';
+      }
+    } catch (e: any) {
+      console.warn('Auto-push deletion to GitHub failed:', e);
+    }
+  }
+
+  window.dispatchEvent(new CustomEvent('wedding_wishes_updated', { detail: current }));
+
+  return {
+    success: true,
+    message: 'Wish message deleted successfully.',
+    githubStatus,
+  };
 }

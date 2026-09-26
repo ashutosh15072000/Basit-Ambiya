@@ -10,6 +10,7 @@ import {
   ChevronRight,
   Pause,
   Play,
+  Trash2,
 } from 'lucide-react';
 import { FlowerDivider, FloralCornerAccents } from './Ornaments';
 import { IslamicPatternOverlay } from './IslamicBackground';
@@ -18,6 +19,7 @@ import {
   WeddingWish,
   fetchAllPublicWishes,
   addWeddingWish,
+  deleteWeddingWish,
   getStoredWishes,
   saveWishesLocally,
 } from '../services/wishesService';
@@ -26,7 +28,11 @@ export type { WeddingWish };
 
 const AUTOPLAY_INTERVAL_MS = 5000;
 
-export const RsvpWishesSection: React.FC = () => {
+interface RsvpWishesSectionProps {
+  isAdmin?: boolean;
+}
+
+export const RsvpWishesSection: React.FC<RsvpWishesSectionProps> = ({ isAdmin = false }) => {
   const [wishes, setWishes] = useState<WeddingWish[]>(() => getStoredWishes());
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isAutoPlaying, setIsAutoPlaying] = useState(true);
@@ -373,7 +379,28 @@ export const RsvpWishesSection: React.FC = () => {
                   )}
                 </div>
 
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+                  {/* Admin Delete Action */}
+                  {isAdmin && activeWish && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (
+                          window.confirm(
+                            `Admin Action:\nAre you sure you want to delete the message from "${activeWish.name}"?\nIt will be permanently removed from public view and GitHub.`
+                          )
+                        ) {
+                          await deleteWeddingWish(activeWish.id);
+                        }
+                      }}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-cinzel font-bold text-rose-800 bg-rose-100 hover:bg-rose-200 border border-rose-300 transition-all cursor-pointer shadow-xs"
+                      title="Delete this message (Admin only)"
+                    >
+                      <Trash2 className="w-3.5 h-3.5 text-rose-700" />
+                      <span>Delete (Admin)</span>
+                    </button>
+                  )}
+
                   {/* Heart / Ameen Reaction */}
                   <button
                     type="button"

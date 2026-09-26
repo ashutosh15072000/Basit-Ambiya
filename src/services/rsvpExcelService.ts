@@ -652,3 +652,53 @@ export async function importExcelFile(file: File): Promise<{
     };
   }
 }
+
+/**
+ * Deletes an RSVP record by ID (Admin only)
+ * Updates local registry, notifies backend server, and syncs updated Excel file to GitHub.
+ */
+export async function deleteRsvpEntry(id: string): Promise<{
+  success: boolean;
+  message: string;
+  githubSyncResult?: { success: boolean; message: string; commitUrl?: string };
+}> {
+  const current = getStoredRsvps();
+  const existing = current.find((r) => r.id === id);
+  if (!existing) {
+    return { success: false, message: 'Record not found' };
+  }
+
+  const updated = current.filter((r) => r.id !== id);
+  saveAllRsvps(updated);
+
+  // Notify backend server
+  try {
+    await fetch(`/api/rsvp/${id}?admin=rsvp`, {
+      method: 'DELETE',
+      headers: {
+        'x-admin-rsvp': 'true',
+      },
+    }).catch(() => {});
+  } catch {}
+
+  // Push updated Excel file to GitHub if configured
+  const ghConfig = getGitHubConfig();
+  let githubSyncResult: { success: boolean; message: string; commitUrl?: string } | undefined;
+  if (ghConfig.enabled && ghConfig.token && ghConfig.owner && ghConfig.repo) {
+    try {
+      githubSyncResult = await pushExcelToGitHub(updated, ghConfig);
+    } catch (e: any) {
+      console.warn('GitHub push error on delete:', e);
+    }
+  }
+
+  // Trigger global events so UI updates
+  window.dispatchEvent(new CustomEvent('wedding_rsvp_updated', { detail: updated }));
+  window.dispatchEvent(new CustomEvent('wedding_wishes_updated'));
+
+  return {
+    success: true,
+    message: `RSVP record for "${existing.guest_name}" was deleted successfully.`,
+    githubSyncResult,
+  };
+}

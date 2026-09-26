@@ -14,6 +14,9 @@ import {
   ExternalLink,
   Settings,
   Sparkles,
+  Trash2,
+  MessageSquareHeart,
+  Search,
 } from 'lucide-react';
 import {
   RsvpRecord,
@@ -21,11 +24,17 @@ import {
   downloadExcelFile,
   pushExcelToGitHub,
   importExcelFile,
+  deleteRsvpEntry,
   getGitHubConfig,
   saveGitHubConfig,
   GitHubSyncConfig,
 } from '../services/rsvpExcelService';
-import { getStoredWishes, pushWishesToGitHub } from '../services/wishesService';
+import {
+  WeddingWish,
+  getStoredWishes,
+  deleteWeddingWish,
+  pushWishesToGitHub,
+} from '../services/wishesService';
 
 interface RsvpExcelManagerProps {
   isOpen: boolean;
@@ -33,7 +42,11 @@ interface RsvpExcelManagerProps {
 }
 
 export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onClose }) => {
+  const [activeTab, setActiveTab] = useState<'rsvps' | 'wishes'>('rsvps');
   const [rsvps, setRsvps] = useState<RsvpRecord[]>([]);
+  const [wishes, setWishes] = useState<WeddingWish[]>([]);
+  const [wishSearch, setWishSearch] = useState('');
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [ghConfig, setGhConfig] = useState<GitHubSyncConfig>(getGitHubConfig());
   const [showSettings, setShowSettings] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -48,6 +61,7 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
 
   const loadData = () => {
     setRsvps(getStoredRsvps());
+    setWishes(getStoredWishes());
     setGhConfig(getGitHubConfig());
   };
 
@@ -62,7 +76,11 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
       loadData();
     };
     window.addEventListener('wedding_rsvp_updated', handleUpdate);
-    return () => window.removeEventListener('wedding_rsvp_updated', handleUpdate);
+    window.addEventListener('wedding_wishes_updated', handleUpdate);
+    return () => {
+      window.removeEventListener('wedding_rsvp_updated', handleUpdate);
+      window.removeEventListener('wedding_wishes_updated', handleUpdate);
+    };
   }, []);
 
   if (!isOpen) return null;
@@ -77,6 +95,76 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
   const handleDownload = () => {
     downloadExcelFile(rsvps);
   };
+
+  const handleDeleteRsvp = async (id: string, name: string) => {
+    if (
+      !window.confirm(
+        `Admin Action:\nAre you sure you want to delete the RSVP response for "${name}"?\nThis will remove their entry from the Excel sheet and update GitHub.`
+      )
+    ) {
+      return;
+    }
+
+    setDeletingId(id);
+    setSyncFeedback({ type: null, message: '' });
+
+    try {
+      const res = await deleteRsvpEntry(id);
+      loadData();
+      setSyncFeedback({
+        type: res.success ? 'success' : 'error',
+        message: res.message,
+        commitUrl: res.githubSyncResult?.commitUrl,
+      });
+    } catch (err: any) {
+      setSyncFeedback({
+        type: 'error',
+        message: err.message || 'Error deleting RSVP response',
+      });
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const handleDeleteWish = async (id: string, author: string) => {
+    if (
+      !window.confirm(
+        `Admin Action:\nAre you sure you want to delete the wish message from "${author}"?\nIt will be permanently removed from public display and GitHub.`
+      )
+    ) {
+      return;
+    }
+
+    setDeletingId(id);
+    setSyncFeedback({ type: null, message: '' });
+
+    try {
+      const res = await deleteWeddingWish(id);
+      loadData();
+      setSyncFeedback({
+        type: res.success ? 'success' : 'error',
+        message: res.message,
+        commitUrl: res.githubStatus?.startsWith('http') ? res.githubStatus : undefined,
+      });
+    } catch (err: any) {
+      setSyncFeedback({
+        type: 'error',
+        message: err.message || 'Error deleting wish message',
+      });
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const filteredWishes = wishes.filter((w) => {
+    if (!wishSearch.trim()) return true;
+    const q = wishSearch.toLowerCase();
+    return (
+      w.name.toLowerCase().includes(q) ||
+      (w.relationOrCity && w.relationOrCity.toLowerCase().includes(q)) ||
+      w.message.toLowerCase().includes(q)
+    );
+  });
 
   const processUploadedFile = async (file: File) => {
     if (!file) return;
@@ -226,8 +314,45 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
           </div>
         </div>
 
+        {/* Tab Navigation */}
+        <div className="flex items-center border-b border-gold-soft/40 bg-[#f4ede2] px-6 pt-3 shrink-0 gap-2">
+          <button
+            type="button"
+            onClick={() => setActiveTab('rsvps')}
+            className={`inline-flex items-center gap-2 px-4 py-2.5 font-cinzel text-xs font-bold uppercase tracking-wider rounded-t-xl transition-all cursor-pointer border-t-2 border-x-2 ${
+              activeTab === 'rsvps'
+                ? 'bg-[#faf8f5] text-[#1b4332] border-[#e4c88a] shadow-xs'
+                : 'bg-transparent text-foreground/60 border-transparent hover:text-foreground hover:bg-black/5'
+            }`}
+          >
+            <FileSpreadsheet className="w-4 h-4 text-[#1b4332]" />
+            <span>RSVP Responses &amp; Excel</span>
+            <span className="px-2 py-0.5 rounded-full text-[10px] bg-[#1b4332]/10 text-[#1b4332] font-mono">
+              {rsvps.length}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('wishes')}
+            className={`inline-flex items-center gap-2 px-4 py-2.5 font-cinzel text-xs font-bold uppercase tracking-wider rounded-t-xl transition-all cursor-pointer border-t-2 border-x-2 ${
+              activeTab === 'wishes'
+                ? 'bg-[#faf8f5] text-[#93203c] border-[#e4c88a] shadow-xs'
+                : 'bg-transparent text-foreground/60 border-transparent hover:text-foreground hover:bg-black/5'
+            }`}
+          >
+            <MessageSquareHeart className="w-4 h-4 text-[#93203c]" />
+            <span>Guest Wishes &amp; Duas</span>
+            <span className="px-2 py-0.5 rounded-full text-[10px] bg-[#93203c]/10 text-[#93203c] font-mono">
+              {wishes.length}
+            </span>
+          </button>
+        </div>
+
         {/* Content body */}
         <div className="p-6 overflow-y-auto space-y-6">
+          {activeTab === 'rsvps' ? (
+            <>
           {/* Quick Metrics */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
             <div className="bg-white p-4 rounded-xl border border-gold-soft/50 shadow-xs">
@@ -532,13 +657,15 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
                     <th className="p-3">Status</th>
                     <th className="p-3">Guests</th>
                     <th className="p-3">Ceremonies</th>
+                    <th className="p-3">Message</th>
                     <th className="p-3">Date</th>
+                    <th className="p-3 text-right">Delete</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gold-soft/20 font-serif-display">
                   {rsvps.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="p-8 text-center text-foreground/60 italic text-sm">
+                      <td colSpan={9} className="p-8 text-center text-foreground/60 italic text-sm">
                         No RSVP responses recorded yet. As guests submit the form, their names and details will appear here and in the Excel sheet!
                       </td>
                     </tr>
@@ -565,8 +692,27 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
                         <td className="p-3 text-foreground/80 max-w-xs truncate" title={rsvp.events.join(', ')}>
                           {rsvp.events.length > 0 ? rsvp.events.join(', ') : 'All Celebrations'}
                         </td>
+                        <td className="p-3 text-foreground/75 max-w-[150px] truncate italic" title={rsvp.message || undefined}>
+                          {rsvp.message || '—'}
+                        </td>
                         <td className="p-3 text-foreground/60 text-[11px] whitespace-nowrap">
                           {new Date(rsvp.submitted_at).toLocaleDateString()}
+                        </td>
+                        <td className="p-3 text-right">
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteRsvp(rsvp.id, rsvp.guest_name)}
+                            disabled={deletingId === rsvp.id}
+                            className="p-1.5 rounded-lg text-rose-700 hover:text-rose-900 hover:bg-rose-100 transition-colors cursor-pointer disabled:opacity-40"
+                            title={`Delete RSVP record for ${rsvp.guest_name}`}
+                            aria-label={`Delete RSVP record for ${rsvp.guest_name}`}
+                          >
+                            {deletingId === rsvp.id ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin text-rose-600" />
+                            ) : (
+                              <Trash2 className="w-3.5 h-3.5" />
+                            )}
+                          </button>
                         </td>
                       </tr>
                     ))
@@ -575,6 +721,121 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
               </table>
             </div>
           </div>
+            </>
+          ) : (
+            /* Wishes Moderation Tab */
+            <div className="space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-[#f3ede2] rounded-xl border border-gold-soft/60">
+                <div>
+                  <h4 className="font-cinzel text-sm font-bold text-foreground">
+                    Guest Book &amp; Duas Moderation ({wishes.length})
+                  </h4>
+                  <p className="font-serif-display text-xs text-foreground/70 italic">
+                    Review, search, and delete inappropriate or test messages from the public wishes section.
+                  </p>
+                </div>
+
+                <div className="relative min-w-[240px]">
+                  <Search className="w-4 h-4 text-foreground/40 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={wishSearch}
+                    onChange={(e) => setWishSearch(e.target.value)}
+                    placeholder="Search by name or message..."
+                    className="w-full pl-9 pr-3 py-1.5 text-xs bg-white border border-gold-soft/80 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-[#93203c]"
+                  />
+                </div>
+              </div>
+
+              {/* Feedback Banner */}
+              {syncFeedback.type && (
+                <div
+                  className={`p-4 rounded-xl border flex items-center justify-between gap-3 ${
+                    syncFeedback.type === 'success'
+                      ? 'bg-emerald-50 border-emerald-300 text-emerald-900'
+                      : 'bg-rose-50 border-rose-300 text-rose-900'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    {syncFeedback.type === 'success' ? (
+                      <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                    ) : (
+                      <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
+                    )}
+                    <p className="text-sm font-semibold">{syncFeedback.message}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSyncFeedback({ type: null, message: '' })}
+                    className="text-foreground/40 hover:text-foreground text-sm cursor-pointer"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
+
+              {/* Wishes List */}
+              <div className="space-y-3 max-h-[480px] overflow-y-auto pr-1">
+                {filteredWishes.length === 0 ? (
+                  <div className="p-12 text-center text-foreground/60 italic font-serif-display bg-white rounded-xl border border-gold-soft/40">
+                    No guest wishes found {wishSearch ? 'matching your search' : 'yet'}.
+                  </div>
+                ) : (
+                  filteredWishes.map((wish) => (
+                    <div
+                      key={wish.id}
+                      className="p-4 rounded-xl bg-white border border-gold-soft/60 shadow-xs hover:border-gold transition-all flex flex-col sm:flex-row sm:items-start justify-between gap-3"
+                    >
+                      <div className="space-y-1.5 flex-1 text-left">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-serif-display text-base font-bold text-foreground">
+                            {wish.name}
+                          </span>
+                          {wish.relationOrCity && (
+                            <span className="text-xs text-foreground/60 font-serif-display italic">
+                              ({wish.relationOrCity})
+                            </span>
+                          )}
+                          {wish.attending === 'yes' ? (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-emerald-100 text-emerald-800 border border-emerald-300">
+                              ✓ Attending
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-stone-100 text-stone-700 border border-stone-300">
+                              Well-wisher
+                            </span>
+                          )}
+                          <span className="text-[11px] text-foreground/50 font-serif-display ml-auto">
+                            {wish.date}
+                          </span>
+                        </div>
+                        <p className="font-serif-display text-sm text-foreground/85 italic bg-[#faf8f5] p-3 rounded-lg border border-gold-soft/30 leading-relaxed">
+                          "{wish.message}"
+                        </p>
+                      </div>
+
+                      <div className="shrink-0 flex items-center gap-2 self-end sm:self-center">
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteWish(wish.id, wish.name)}
+                          disabled={deletingId === wish.id}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-cinzel font-bold text-rose-800 bg-rose-50 hover:bg-rose-100 border border-rose-300 transition-all cursor-pointer disabled:opacity-40"
+                          title={`Delete message from ${wish.name}`}
+                        >
+                          {deletingId === wish.id ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin text-rose-700" />
+                          ) : (
+                            <Trash2 className="w-3.5 h-3.5 text-rose-700" />
+                          )}
+                          <span>Delete Wish</span>
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Footer */}
