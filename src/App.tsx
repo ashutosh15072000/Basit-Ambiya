@@ -16,7 +16,6 @@ import { AnimatedSection } from './components/AnimatedSection';
 import { FloatingRsvpButton } from './components/FloatingRsvpButton';
 import { InvitationPageCard } from './components/InvitationPageCard';
 import { RsvpExcelManager } from './components/RsvpExcelManager';
-import { PersonalizedGuestBanner } from './components/PersonalizedGuestBanner';
 import {
   parseInvitedFunctionIds,
   parseGuestName,
@@ -197,14 +196,6 @@ export default function App() {
 
       {/* Main Wedding Invitation Page - pre-mounted for instant zero-latency display */}
       <main className="relative bg-cream">
-        {/* Personalized Guest Welcome Banner (Visible when personalized link used or in admin mode) */}
-        <PersonalizedGuestBanner
-          guestName={guestName}
-          invitedFunctionIds={invitedFunctionIds}
-          isAdmin={isAdminMode}
-          onSelectFunctions={(ids) => setInvitedFunctionIds(ids)}
-        />
-
         {/* Invitation Suite Section - Clean presentation without background distractions */}
   
         <section className="relative w-full pt-4 sm:pt-10 pb-12 sm:pb-16 flex flex-col items-center justify-center px-1 sm:px-4 md:px-6 select-none border-b border-gold-soft/30">
