@@ -1,4 +1,5 @@
 import * as XLSX from 'xlsx';
+import { addWeddingWish } from './wishesService';
 
 export interface RsvpRecord {
   id: string;
@@ -396,4 +397,237 @@ export async function addRsvpEntry(entry: Omit<RsvpRecord, 'id' | 'submitted_at'
   }
 
   return { record: newRecord, githubSyncResult };
+}
+
+/**
+ * Imports and parses an Excel or CSV file (.xlsx, .xls, .csv), extracts RSVP records,
+ * merges them with existing records, saves locally, updates backend, and syncs to GitHub.
+ */
+export async function importExcelFile(file: File): Promise<{
+  success: boolean;
+  message: string;
+  totalRecords: number;
+  newImportedCount: number;
+  records: RsvpRecord[];
+  githubSyncResult?: { success: boolean; message: string; commitUrl?: string };
+}> {
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    const wb = XLSX.read(arrayBuffer, { type: 'array' });
+
+    // Look for sheet named 'RSVP Responses' or take first sheet
+    const sheetName =
+      wb.SheetNames.find((s) => s.toLowerCase().includes('rsvp')) || wb.SheetNames[0];
+    if (!sheetName) {
+      throw new Error('No readable sheets found in the uploaded workbook.');
+    }
+
+    const ws = wb.Sheets[sheetName];
+    const rawRows = XLSX.utils.sheet_to_json<Record<string, any>>(ws, { defval: '' });
+
+    if (rawRows.length === 0) {
+      throw new Error('The uploaded Excel sheet contains no data rows.');
+    }
+
+    const currentRecords = getStoredRsvps();
+    const parsedRecords: RsvpRecord[] = [];
+
+    // Helper to find value by various header name variations
+    const findField = (row: Record<string, any>, patterns: string[]): any => {
+      const keys = Object.keys(row);
+      for (const pattern of patterns) {
+        const cleanPattern = pattern.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const foundKey = keys.find(
+          (k) => k.trim().toLowerCase().replace(/[^a-z0-9]/g, '') === cleanPattern
+        );
+        if (foundKey && row[foundKey] !== undefined && row[foundKey] !== null) {
+          return row[foundKey];
+        }
+      }
+      return '';
+    };
+
+    let importedCount = 0;
+
+    for (let idx = 0; idx < rawRows.length; idx++) {
+      const row = rawRows[idx];
+      const guestName = String(
+        findField(row, ['Guest Name', 'Name', 'Full Name', 'Guest', 'Invitee'])
+      ).trim();
+
+      // Skip empty or placeholder rows
+      if (
+        !guestName ||
+        guestName.toLowerCase().includes('registry initialized') ||
+        guestName.toLowerCase().includes('template initialized') ||
+        guestName.toLowerCase().includes('wedding rsvp registry')
+      ) {
+        continue;
+      }
+
+      const phone =
+        String(findField(row, ['Contact Phone', 'Phone', 'Mobile', 'Contact', 'Number'])).trim() ||
+        null;
+      const attendingRaw = String(
+        findField(row, ['Attending Status', 'Attending', 'Status', 'RSVP Status'])
+      ).toLowerCase();
+      const isDeclined =
+        attendingRaw.includes('decline') ||
+        attendingRaw.includes('no') ||
+        attendingRaw.includes('not attending');
+      const attending: 'yes' | 'no' = isDeclined ? 'no' : 'yes';
+
+      const guestCountRaw = findField(row, [
+        'Total Guests Attending',
+        'Guests',
+        'Guest Count',
+        'Number of Guests',
+        'Total Guests',
+        'Count',
+        'Seats',
+      ]);
+      const parsedGuestCount = Number(guestCountRaw);
+      const guest_count =
+        attending === 'no'
+          ? 0
+          : !isNaN(parsedGuestCount) && parsedGuestCount > 0
+          ? parsedGuestCount
+          : 1;
+
+      const ceremoniesRaw = String(
+        findField(row, ['Ceremonies Selected', 'Ceremonies', 'Events', 'Functions', 'Events Selected'])
+      ).trim();
+      const events: string[] =
+        ceremoniesRaw &&
+        ceremoniesRaw !== '—' &&
+        ceremoniesRaw.toLowerCase() !== 'all celebrations / general'
+          ? ceremoniesRaw.split(/[;,]/).map((s) => s.trim()).filter(Boolean)
+          : [];
+
+      const dietary = String(
+        findField(row, ['Dietary Preferences', 'Dietary', 'Diet', 'Food Preferences', 'Food'])
+      ).trim();
+      const cleanDietary =
+        dietary && dietary !== '—' && dietary.toLowerCase() !== 'none specified' ? dietary : null;
+
+      const message = String(
+        findField(row, [
+          'Heartfelt Duas & Message',
+          'Message',
+          'Duas',
+          'Dua',
+          'Blessing',
+          'Wishes',
+          'Notes',
+        ])
+      ).trim();
+      const cleanMessage = message && message !== '—' ? message : null;
+
+      const dateRaw = String(
+        findField(row, ['Submission Date', 'Date', 'Submitted At', 'Timestamp'])
+      ).trim();
+      let submitted_at = new Date().toISOString();
+      if (dateRaw) {
+        const parsedDate = new Date(dateRaw);
+        if (!isNaN(parsedDate.getTime())) {
+          submitted_at = parsedDate.toISOString();
+        }
+      }
+
+      parsedRecords.push({
+        id: `rsvp-import-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6)}`,
+        submitted_at,
+        guest_name: guestName,
+        phone,
+        attending,
+        guest_count,
+        events,
+        dietary: cleanDietary,
+        message: cleanMessage,
+      });
+      importedCount++;
+    }
+
+    if (parsedRecords.length === 0) {
+      throw new Error(
+        'No valid guest records found in the sheet. Please make sure columns have "Guest Name" and "Attending Status".'
+      );
+    }
+
+    // Merge logic: avoid duplicate entries if same guest name and phone exist
+    const mergedList: RsvpRecord[] = [...currentRecords];
+    let newEntriesCount = 0;
+
+    for (const newRec of parsedRecords) {
+      const existingIdx = mergedList.findIndex(
+        (cur) =>
+          cur.guest_name.toLowerCase() === newRec.guest_name.toLowerCase() &&
+          (cur.phone === newRec.phone || (!cur.phone && !newRec.phone))
+      );
+      if (existingIdx >= 0) {
+        // Update existing record
+        mergedList[existingIdx] = {
+          ...mergedList[existingIdx],
+          ...newRec,
+          id: mergedList[existingIdx].id,
+        };
+      } else {
+        mergedList.push(newRec);
+        newEntriesCount++;
+      }
+
+      // If imported record has a message/dua, also sync into wishes list
+      if (newRec.message && newRec.message.trim().length > 0) {
+        addWeddingWish({
+          name: newRec.guest_name,
+          relationOrCity: newRec.events.length > 0 ? 'Attending Guest' : 'Wedding Guest',
+          message: newRec.message.trim(),
+          attending: newRec.attending,
+        }).catch(() => {});
+      }
+    }
+
+    // Save locally
+    saveAllRsvps(mergedList);
+
+    // Save to backend server if available
+    try {
+      await fetch('/api/rsvp/bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rsvps: mergedList }),
+      }).catch(() => {});
+    } catch {}
+
+    // Push to GitHub if configured
+    const ghConfig = getGitHubConfig();
+    let githubSyncResult: { success: boolean; message: string; commitUrl?: string } | undefined;
+    if (ghConfig.enabled && ghConfig.token && ghConfig.owner && ghConfig.repo) {
+      try {
+        githubSyncResult = await pushExcelToGitHub(mergedList, ghConfig);
+      } catch (ghErr) {
+        console.warn('Auto GitHub push after import failed:', ghErr);
+      }
+    }
+
+    const ghNotice = githubSyncResult?.success ? ' and synced to GitHub!' : '';
+
+    return {
+      success: true,
+      message: `Successfully uploaded & imported ${importedCount} guests (${newEntriesCount} new)${ghNotice}`,
+      totalRecords: mergedList.length,
+      newImportedCount: newEntriesCount,
+      records: mergedList,
+      githubSyncResult,
+    };
+  } catch (err: any) {
+    console.error('Error importing Excel file:', err);
+    return {
+      success: false,
+      message: err.message || 'Failed to read or parse the Excel file.',
+      totalRecords: 0,
+      newImportedCount: 0,
+      records: [],
+    };
+  }
 }

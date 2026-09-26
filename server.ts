@@ -285,6 +285,133 @@ app.get('/api/rsvp/download', (_req: Request, res: Response) => {
   return res.status(404).send('Excel file not generated yet');
 });
 
+// Bulk RSVP update (used when importing or uploading Excel spreadsheet)
+app.post('/api/rsvp/bulk', async (req: Request, res: Response) => {
+  try {
+    const body = req.body;
+    if (!body || !Array.isArray(body.rsvps)) {
+      return res.status(400).json({ success: false, error: 'rsvps array is required' });
+    }
+
+    const current = loadRsvps();
+    const newItems: RsvpEntry[] = body.rsvps.map((item: any, idx: number) => ({
+      id: item.id || `rsvp-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6)}`,
+      submitted_at: item.submitted_at || new Date().toISOString(),
+      guest_name: String(item.guest_name).trim(),
+      phone: item.phone ? String(item.phone).trim() : null,
+      attending: item.attending === 'no' ? 'no' : 'yes',
+      guest_count: Number(item.guest_count) || (item.attending === 'no' ? 0 : 1),
+      events: Array.isArray(item.events) ? item.events : [],
+      dietary: item.dietary ? String(item.dietary).trim() : null,
+      message: item.message ? String(item.message).trim() : null,
+    }));
+
+    // Merge without duplicates
+    const merged: RsvpEntry[] = [...current];
+    for (const item of newItems) {
+      const existingIdx = merged.findIndex(
+        (m) => m.guest_name.toLowerCase() === item.guest_name.toLowerCase() &&
+               (m.phone === item.phone || (!m.phone && !item.phone))
+      );
+      if (existingIdx >= 0) {
+        merged[existingIdx] = { ...merged[existingIdx], ...item, id: merged[existingIdx].id };
+      } else {
+        merged.push(item);
+      }
+    }
+
+    saveRsvps(merged);
+
+    // Also update wishes with any messages in the imported list
+    const currentWishes = loadWishes();
+    let wishesUpdated = false;
+    for (const item of merged) {
+      if (item.message && item.message.trim().length > 0) {
+        const wishId = `wish-rsvp-${item.id}`;
+        if (!currentWishes.some((w) => w.id === wishId)) {
+          currentWishes.unshift({
+            id: wishId,
+            name: item.guest_name,
+            relationOrCity: item.events && item.events.length > 0 ? 'Attending Guest' : 'Wedding Guest',
+            message: item.message.trim(),
+            date: new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }),
+            timestamp: item.submitted_at,
+            likes: 1,
+            attending: item.attending,
+          });
+          wishesUpdated = true;
+        }
+      }
+    }
+    if (wishesUpdated) {
+      saveWishes(currentWishes);
+    }
+
+    // Auto-commit to GitHub if env vars are present
+    const ghToken = process.env.GITHUB_TOKEN;
+    const ghOwner = process.env.GITHUB_OWNER;
+    const ghRepo = process.env.GITHUB_REPO;
+    const ghBranch = process.env.GITHUB_BRANCH || 'main';
+
+    let githubStatus: string | null = null;
+    if (ghToken && ghOwner && ghRepo) {
+      try {
+        const filePath = 'wedding-rsvps.xlsx';
+        const buffer = fs.readFileSync(EXCEL_ROOT_PATH);
+        const base64 = buffer.toString('base64');
+
+        let sha: string | undefined = undefined;
+        try {
+          const getRes = await fetch(
+            `https://api.github.com/repos/${ghOwner}/${ghRepo}/contents/${filePath}?ref=${ghBranch}`,
+            {
+              headers: {
+                Authorization: `Bearer ${ghToken}`,
+                Accept: 'application/vnd.github.v3+json',
+              },
+            }
+          );
+          if (getRes.ok) {
+            const data = (await getRes.json()) as any;
+            sha = data.sha;
+          }
+        } catch {}
+
+        await fetch(
+          `https://api.github.com/repos/${ghOwner}/${ghRepo}/contents/${filePath}`,
+          {
+            method: 'PUT',
+            headers: {
+              Authorization: `Bearer ${ghToken}`,
+              Accept: 'application/vnd.github.v3+json',
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              message: `Bulk import/update RSVP Excel registry (${merged.length} total entries)`,
+              content: base64,
+              sha,
+              branch: ghBranch,
+            }),
+          }
+        );
+        githubStatus = 'Synced Excel workbook to GitHub repository';
+      } catch (e) {
+        console.warn('Bulk sync to GitHub failed:', e);
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `Registry updated with ${merged.length} total records`,
+      total: merged.length,
+      githubStatus,
+    });
+  } catch (err: any) {
+    console.error('API /api/rsvp/bulk error:', err);
+    return res.status(500).json({ success: false, error: err.message || 'Server error' });
+  }
+});
+
 // Wishes API Endpoints
 app.get('/api/wishes', (_req: Request, res: Response) => {
   const wishes = loadWishes();

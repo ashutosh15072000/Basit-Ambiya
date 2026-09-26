@@ -6,11 +6,12 @@ import { getAssetPath } from '../utils/assets';
 import { GalleryItem } from '../types';
 
 export const GALLERY_ITEMS: GalleryItem[] = [
-  { image: getAssetPath('assets/IMG_0034-24WZOV6N.jpeg'), caption: 'Sweet smiles & shared dreams' },
-  { image: getAssetPath('assets/IMG_9318-CfLmeoUo.jpeg'), caption: 'Hand in hand, heart to heart' },
-  { image: getAssetPath('assets/SSG00142-BZRauCC2.jpg'), caption: 'Love in every moment' },
-  { image: getAssetPath('assets/SSG00440-Dz91S7X0.jpg'), caption: 'Together, our journey begins' },
-  { image: getAssetPath('assets/SSG09645-C19LQ60y.jpg'), caption: 'Forever and always' },
+  { image: getAssetPath('assets/Basti&Ambiya11.webp'), caption: 'Basit Ali & Ambiya Basher' },
+  { image: getAssetPath('assets/page 1.webp'), caption: 'Sacred Prelude & Divine Blessing' },
+  { image: getAssetPath('assets/page 2(oct 29).webp'), caption: 'The Sacred Nikah & Rukhsati' },
+  { image: getAssetPath('assets/page3( 30 oct).webp'), caption: 'Wedding Reception Celebration' },
+  { image: getAssetPath('assets/page 4 (2 Nov).webp'), caption: 'Walima & Grand Feast Banquet' },
+  { image: getAssetPath('assets/basit-ambiya-card.webp'), caption: 'With Duas & Love' },
 ];
 
 export const GalleryCarousel: React.FC = () => {

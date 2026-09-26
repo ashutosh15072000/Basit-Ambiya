@@ -6,15 +6,10 @@ const CRITICAL_IMAGES = [
   'assets/Basti&Ambiya11.webp',
   'assets/opening-circle-logo.webp',
   'assets/page 1.webp',
-  'assets/Basit&Ambiya11.webp',
-  'assets/Basit&Ambiya11.png',
-  'assets/page2.webp',
   'assets/page 2(oct 29).webp',
   'assets/page3( 30 oct).webp',
   'assets/page 4 (2 Nov).webp',
-  'assets/SSG09645-C19LQ60y.webp',
-  'assets/SSG00440-Dz91S7X0.webp',
-  'assets/012-B2BcXKfQ.webp',
+  'assets/basit-ambiya-card.webp',
 ];
 
 /**

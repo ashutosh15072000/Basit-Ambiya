@@ -35,9 +35,9 @@ const EVENTS_SCHEDULE: EventDetails[] = [
     venue: 'Shimla Resort',
     dressCode: 'Royal Traditional / Modest Luxury',
     directionsUrl: 'https://maps.app.goo.gl/oNb7LC2ZuKpFT9b7A?g_st=ac',
-    couplePhoto: getAssetPath('assets/SSG09645-C19LQ60y.webp'),
-    caricatureImage: getAssetPath('assets/SSG09645-C19LQ60y.webp'),
-    caricatureBadge: 'Basit Ali and Ambiya Basher · Sacred Rukhsati 🕊️',
+    couplePhoto: getAssetPath('assets/page 2(oct 29).webp'),
+    caricatureImage: getAssetPath('assets/page 2(oct 29).webp'),
+    caricatureBadge: 'Basit Ali and Ambiya Basher · Sacred Nikah 🕊️',
     fullCardImage: getAssetPath('assets/page 2(oct 29).webp'),
     cardImageCandidates: [
       getAssetPath('assets/page 2(oct 29).webp'),
@@ -59,8 +59,8 @@ const EVENTS_SCHEDULE: EventDetails[] = [
     venue: 'Hotel Ramada',
     dressCode: 'Formal Evening Elegance',
     directionsUrl: 'https://maps.app.goo.gl/VC1HVfJNPzLf7CNy9',
-    couplePhoto: getAssetPath('assets/SSG00440-Dz91S7X0.webp'),
-    caricatureImage: getAssetPath('assets/SSG00440-Dz91S7X0.webp'),
+    couplePhoto: getAssetPath('assets/page3( 30 oct).webp'),
+    caricatureImage: getAssetPath('assets/page3( 30 oct).webp'),
     caricatureBadge: 'Basit Ali and Ambiya Basher · Wedding Reception 👑',
     fullCardImage: getAssetPath('assets/page3( 30 oct).webp'),
     cardImageCandidates: [
@@ -83,8 +83,8 @@ const EVENTS_SCHEDULE: EventDetails[] = [
     venue: 'Radiant Resorts Gorakhpur',
     dressCode: 'Formal Evening Elegance',
     directionsUrl: 'https://maps.app.goo.gl/YeqWGNYWq3HWQegm9',
-    couplePhoto: getAssetPath('assets/SSG00440-Dz91S7X0.webp'),
-    caricatureImage: getAssetPath('assets/SSG00440-Dz91S7X0.webp'),
+    couplePhoto: getAssetPath('assets/page 4 (2 Nov).webp'),
+    caricatureImage: getAssetPath('assets/page 4 (2 Nov).webp'),
     caricatureBadge: 'Basit Ali and Ambiya Basher · Wedding Reception 👑',
     fullCardImage: getAssetPath('assets/page 4 (2 Nov).webp'),
     cardImageCandidates: [
@@ -117,8 +117,16 @@ export default function App() {
         setShowAdminExcel((prev) => !prev);
       }
     };
+
+    const handleOpenManager = () => setShowAdminExcel(true);
+
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener('open_rsvp_excel_manager', handleOpenManager);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('open_rsvp_excel_manager', handleOpenManager);
+    };
   }, []);
 
   useEffect(() => {

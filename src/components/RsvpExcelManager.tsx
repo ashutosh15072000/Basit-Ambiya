@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   FileSpreadsheet,
   Download,
+  Upload,
   Github,
   CheckCircle2,
   AlertCircle,
@@ -19,6 +20,7 @@ import {
   getStoredRsvps,
   downloadExcelFile,
   pushExcelToGitHub,
+  importExcelFile,
   getGitHubConfig,
   saveGitHubConfig,
   GitHubSyncConfig,
@@ -35,6 +37,9 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
   const [ghConfig, setGhConfig] = useState<GitHubSyncConfig>(getGitHubConfig());
   const [showSettings, setShowSettings] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [isDraggingFile, setIsDraggingFile] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [syncFeedback, setSyncFeedback] = useState<{
     type: 'success' | 'error' | null;
     message: string;
@@ -71,6 +76,68 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
 
   const handleDownload = () => {
     downloadExcelFile(rsvps);
+  };
+
+  const processUploadedFile = async (file: File) => {
+    if (!file) return;
+    setIsUploading(true);
+    setSyncFeedback({ type: null, message: '' });
+
+    try {
+      const res = await importExcelFile(file);
+      if (res.success) {
+        setSyncFeedback({
+          type: 'success',
+          message: res.message,
+          commitUrl: res.githubSyncResult?.commitUrl,
+        });
+        loadData();
+      } else {
+        setSyncFeedback({
+          type: 'error',
+          message: res.message,
+        });
+      }
+    } catch (err: any) {
+      setSyncFeedback({
+        type: 'error',
+        message: err.message || 'Error uploading Excel file',
+      });
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      processUploadedFile(file);
+    }
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingFile(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingFile(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingFile(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      processUploadedFile(file);
+    }
   };
 
   const handleSaveSettings = (e: React.FormEvent) => {
@@ -192,6 +259,30 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
           {/* Action Toolbar */}
           <div className="flex flex-wrap items-center justify-between gap-3 p-4 bg-[#f3ede2] rounded-xl border border-gold-soft/60">
             <div className="flex flex-wrap items-center gap-3">
+              {/* Hidden File Input for Excel Upload */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".xlsx, .xls, .csv"
+                onChange={handleFileChange}
+                className="hidden"
+                aria-label="Upload Excel File"
+              />
+
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isUploading}
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-700 to-amber-900 text-white font-cinzel text-xs uppercase font-bold tracking-wider hover:brightness-110 shadow-md transition-all cursor-pointer disabled:opacity-50"
+              >
+                {isUploading ? (
+                  <Loader2 className="w-4 h-4 animate-spin text-gold-soft" />
+                ) : (
+                  <Upload className="w-4 h-4 text-gold-soft" />
+                )}
+                {isUploading ? 'Importing Excel...' : 'Upload Excel (.xlsx)'}
+              </button>
+
               <button
                 type="button"
                 onClick={handleDownload}
@@ -219,6 +310,35 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
             <div className="text-xs text-foreground/70 font-cinzel flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
               Excel updates in real-time as guests submit
+            </div>
+          </div>
+
+          {/* Drag and Drop Excel Upload Zone */}
+          <div
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            onClick={() => fileInputRef.current?.click()}
+            className={`border-2 border-dashed rounded-xl p-5 text-center transition-all cursor-pointer ${
+              isDraggingFile
+                ? 'border-emerald-600 bg-emerald-50/80 scale-[1.01]'
+                : 'border-gold-soft/70 hover:border-gold hover:bg-amber-50/40 bg-white/70'
+            }`}
+          >
+            <div className="flex flex-col items-center justify-center gap-1.5">
+              <Upload
+                className={`w-7 h-7 transition-colors ${
+                  isDraggingFile ? 'text-emerald-700 animate-bounce' : 'text-amber-800'
+                }`}
+              />
+              <p className="font-cinzel text-xs sm:text-sm font-bold text-foreground tracking-wide">
+                {isUploading
+                  ? 'Importing and processing guest records...'
+                  : 'Upload or Drag & Drop Excel Sheet (.xlsx, .xls, .csv)'}
+              </p>
+              <p className="font-serif-display text-xs text-foreground/60 italic">
+                Automatically parses guest names, attendance, guest counts, and Duas &amp; syncs to GitHub
+              </p>
             </div>
           </div>
 
