@@ -23,6 +23,7 @@ import {
   Check,
   UserCheck,
   Plus,
+  Image as ImageIcon,
 } from 'lucide-react';
 import {
   RsvpRecord,
@@ -46,6 +47,7 @@ import {
   buildInviteUrl,
   buildWhatsAppMessage,
   getInvitedFunctionsDescription,
+  getFunctionCardImage,
 } from '../utils/invitationConfig';
 
 export interface SavedGuestInvite {
@@ -119,10 +121,49 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
     }
   };
 
-  const handleWhatsAppShare = (name: string, functionIds: number[], url: string) => {
+  const handleWhatsAppShare = async (name: string, functionIds: number[], url: string) => {
     const text = buildWhatsAppMessage(name, functionIds, url);
+    const cardInfo = getFunctionCardImage(functionIds);
+
+    // Try native Web Share API with image file attached!
+    if (typeof navigator !== 'undefined' && navigator.share) {
+      try {
+        const response = await fetch(cardInfo.path);
+        if (response.ok) {
+          const blob = await response.blob();
+          const file = new File([blob], cardInfo.filename, { type: 'image/png' });
+          if (navigator.canShare && navigator.canShare({ files: [file] })) {
+            await navigator.share({
+              title: `Wedding Invitation - Basit & Ambiya (${cardInfo.title})`,
+              text: text,
+              files: [file],
+            });
+            return;
+          }
+        }
+      } catch (err: any) {
+        if (err?.name === 'AbortError') return;
+        console.warn('Native share with image file attachment skipped/fallback:', err);
+      }
+    }
+
+    // Direct WhatsApp link fallback (which also unfurls the dynamic OG card image)
     const whatsappUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
     window.open(whatsappUrl, '_blank');
+  };
+
+  const handleDownloadCardImage = (functionIds: number[]) => {
+    const cardInfo = getFunctionCardImage(functionIds);
+    const link = document.createElement('a');
+    link.href = cardInfo.path;
+    link.download = cardInfo.filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setSyncFeedback({
+      type: 'success',
+      message: `Card image for ${cardInfo.title} (${cardInfo.filename}) downloaded! You can attach it directly into your WhatsApp chat.`,
+    });
   };
 
   const handleSaveInvite = () => {
@@ -1214,6 +1255,70 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
                       )}
                     </span>
                   </div>
+
+                  {/* Attached Function Card Image Box for WhatsApp */}
+                  {(() => {
+                    const cardInfo = getFunctionCardImage(inviteSelectedFunctions);
+                    return (
+                      <div className="p-4 rounded-xl bg-gradient-to-r from-emerald-50 via-[#f8faf8] to-emerald-50/50 border-2 border-emerald-500/40 flex flex-col sm:flex-row items-center justify-between gap-4">
+                        <div className="flex items-center gap-3.5 w-full sm:w-auto">
+                          <div className="relative w-14 h-18 sm:w-16 sm:h-20 shrink-0 rounded-lg overflow-hidden border border-emerald-400 shadow-sm bg-white">
+                            <img
+                              src={cardInfo.path}
+                              alt={cardInfo.title}
+                              className="w-full h-full object-cover"
+                            />
+                            <div className="absolute inset-0 bg-black/5" />
+                          </div>
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-600 text-white text-[10px] font-cinzel font-bold uppercase tracking-wider">
+                                <ImageIcon className="w-3 h-3" />
+                                <span>Attached Image</span>
+                              </span>
+                              <span className="font-serif-display font-semibold text-xs text-emerald-950">
+                                {cardInfo.title} Card
+                              </span>
+                            </div>
+                            <p className="font-serif-display text-xs text-foreground/75">
+                              Attached automatically when sending via WhatsApp native share or rich link preview.
+                            </p>
+                            <p className="font-mono text-[10px] text-foreground/50">
+                              File: {cardInfo.filename}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto justify-end">
+                          <button
+                            type="button"
+                            onClick={() => handleDownloadCardImage(inviteSelectedFunctions)}
+                            className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-white border border-emerald-300 hover:bg-emerald-50 text-emerald-900 font-cinzel text-xs font-bold transition-all shadow-xs cursor-pointer"
+                            title="Download ceremony card image directly"
+                          >
+                            <Download className="w-3.5 h-3.5 text-emerald-700" />
+                            <span>Download Card</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleWhatsAppShare(
+                                inviteGuestName,
+                                inviteSelectedFunctions,
+                                currentInviteUrl
+                              )
+                            }
+                            className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-cinzel text-xs font-bold transition-all shadow-xs cursor-pointer"
+                            title="Share on WhatsApp with attached card image"
+                          >
+                            <Share2 className="w-3.5 h-3.5" />
+                            <span>WhatsApp</span>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
 
@@ -1358,10 +1463,19 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
                               handleWhatsAppShare(item.guestName, item.functionIds, item.url)
                             }
                             className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-cinzel font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition-colors cursor-pointer"
-                            title="Send on WhatsApp"
+                            title="Send on WhatsApp with attached function card image"
                           >
                             <Share2 className="w-3.5 h-3.5" />
                             <span>WhatsApp</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleDownloadCardImage(item.functionIds)}
+                            className="p-1.5 rounded-lg text-emerald-800 hover:text-emerald-950 hover:bg-emerald-100 transition-colors cursor-pointer"
+                            title="Download ceremony card image"
+                          >
+                            <Download className="w-3.5 h-3.5" />
                           </button>
 
                           <a

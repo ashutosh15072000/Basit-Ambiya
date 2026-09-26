@@ -739,6 +739,79 @@ app.delete('/api/wishes/:id', async (req: Request, res: Response) => {
   }
 });
 
+import { parseInvitedFunctionIds, getFunctionCardImage } from './src/utils/invitationConfig.js';
+
+function injectDynamicOpenGraphTags(html: string, req: Request): string {
+  try {
+    const host = req.get('x-forwarded-host') || req.get('host') || `localhost:${PORT}`;
+    const proto = req.get('x-forwarded-proto') || (req.secure ? 'https' : 'http');
+    const functionIds = parseInvitedFunctionIds(req.originalUrl);
+    const cardInfo = getFunctionCardImage(functionIds);
+
+    const fullImageUrl = `${proto}://${host}${cardInfo.path}`;
+    const fullPageUrl = `${proto}://${host}${req.originalUrl}`;
+
+    let title = 'Basit Ali and Ambiya Basher — Wedding Invitation';
+    let desc = 'Sacred Rukhsati & Muslim Wedding Celebration - October 2026';
+
+    if (functionIds.length === 1) {
+      if (functionIds[0] === 1) {
+        title = 'Basit Ali & Ambiya Basher — Rukhsati Invitation (29 Oct)';
+        desc = 'You are cordially invited to the sacred Rukhsati ceremony on Thursday, 29th October 2026 at Shimla Resort.';
+      } else if (functionIds[0] === 2) {
+        title = 'Basit Ali & Ambiya Basher — Wedding Reception (30 Oct)';
+        desc = 'You are cordially invited to the grand Wedding Reception on Friday, 30th October 2026 at Hotel Ramada.';
+      } else if (functionIds[0] === 3) {
+        title = 'Basit Ali & Ambiya Basher — Wedding Reception (2 Nov)';
+        desc = 'You are cordially invited to the grand Wedding Reception on Monday, 2nd November 2026 at Radiant Resorts Gorakhpur.';
+      }
+    } else if (functionIds.length === 2) {
+      if (functionIds.includes(1) && functionIds.includes(2)) {
+        title = 'Basit Ali & Ambiya Basher — Rukhsati & Hotel Ramada Reception';
+        desc = 'You are cordially invited to the Rukhsati (29 Oct) & Wedding Reception (30 Oct).';
+      } else if (functionIds.includes(2) && functionIds.includes(3)) {
+        title = 'Basit Ali & Ambiya Basher — Wedding Receptions (Ramada & Radiant)';
+        desc = 'You are cordially invited to the Wedding Receptions on 30th Oct & 2nd Nov 2026.';
+      } else {
+        title = 'Basit Ali & Ambiya Basher — Rukhsati & Radiant Resorts Reception';
+        desc = 'You are cordially invited to the Rukhsati (29 Oct) & Wedding Reception (2 Nov).';
+      }
+    }
+
+    let modified = html;
+    modified = modified.replace(/<title>.*?<\/title>/i, `<title>${title}</title>`);
+    modified = modified.replace(
+      /<meta property="og:title" content=".*?" \/>/i,
+      `<meta property="og:title" content="${title}" />`
+    );
+    modified = modified.replace(
+      /<meta property="og:description" content=".*?" \/>/i,
+      `<meta property="og:description" content="${desc}" />`
+    );
+    modified = modified.replace(
+      /<meta property="og:image" content=".*?" \/>/i,
+      `<meta property="og:image" content="${fullImageUrl}" />\n    <meta property="og:image:secure_url" content="${fullImageUrl}" />\n    <meta property="og:image:type" content="image/png" />\n    <meta property="og:image:width" content="1200" />\n    <meta property="og:image:height" content="1800" />\n    <meta property="og:url" content="${fullPageUrl}" />`
+    );
+    modified = modified.replace(
+      /<meta name="twitter:title" content=".*?" \/>/i,
+      `<meta name="twitter:title" content="${title}" />`
+    );
+    modified = modified.replace(
+      /<meta name="twitter:description" content=".*?" \/>/i,
+      `<meta name="twitter:description" content="${desc}" />`
+    );
+    modified = modified.replace(
+      /<meta name="twitter:image" content=".*?" \/>/i,
+      `<meta name="twitter:image" content="${fullImageUrl}" />`
+    );
+
+    return modified;
+  } catch (err) {
+    console.warn('Error injecting OpenGraph tags:', err);
+    return html;
+  }
+}
+
 async function startServer() {
   if (!IS_PROD) {
     // In development, mount Vite middleware
@@ -747,13 +820,49 @@ async function startServer() {
       server: { middlewareMode: true },
       appType: 'spa',
     });
+
+    // Intercept HTML requests in dev to inject dynamic OpenGraph tags with function images
+    app.use(async (req, res, next) => {
+      const url = req.originalUrl;
+      const accept = req.headers.accept || '';
+      if (
+        req.method === 'GET' &&
+        !req.path.startsWith('/api') &&
+        !req.path.includes('.') &&
+        (accept.includes('text/html') || req.path === '/')
+      ) {
+        try {
+          const raw = fs.readFileSync(path.resolve(__dirname, 'index.html'), 'utf-8');
+          const viteTransformed = await vite.transformIndexHtml(url, raw);
+          const finalHtml = injectDynamicOpenGraphTags(viteTransformed, req);
+          res.setHeader('Content-Type', 'text/html; charset=utf-8');
+          return res.send(finalHtml);
+        } catch (e) {
+          next(e);
+        }
+      } else {
+        next();
+      }
+    });
+
     app.use(vite.middlewares);
   } else {
     // In production, serve dist folder
     const distPath = path.resolve(__dirname, 'dist');
-    app.use(express.static(distPath));
-    app.get('*', (_req: Request, res: Response) => {
-      res.sendFile(path.resolve(distPath, 'index.html'));
+    const indexHtmlPath = path.resolve(distPath, 'index.html');
+    app.use(express.static(distPath, { index: false }));
+    app.get('*', (req: Request, res: Response) => {
+      try {
+        if (fs.existsSync(indexHtmlPath)) {
+          const raw = fs.readFileSync(indexHtmlPath, 'utf-8');
+          const finalHtml = injectDynamicOpenGraphTags(raw, req);
+          res.setHeader('Content-Type', 'text/html; charset=utf-8');
+          return res.send(finalHtml);
+        }
+      } catch (err) {
+        console.warn('Error reading index.html:', err);
+      }
+      res.sendFile(indexHtmlPath);
     });
   }
 

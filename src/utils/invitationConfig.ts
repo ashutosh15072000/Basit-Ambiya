@@ -13,6 +13,8 @@ export interface WeddingFunction {
   rsvpId: string;
   directionsUrl: string;
   timestamp: number;
+  cardImagePath: string;
+  cardImageFilename: string;
 }
 
 export const ALL_FUNCTIONS: WeddingFunction[] = [
@@ -31,6 +33,8 @@ export const ALL_FUNCTIONS: WeddingFunction[] = [
     rsvpId: 'Rukhsati',
     directionsUrl: 'https://maps.app.goo.gl/oNb7LC2ZuKpFT9b7A?g_st=ac',
     timestamp: new Date('2026-10-29T19:30:00').getTime(),
+    cardImagePath: '/assets/function-1-rukhsati.png',
+    cardImageFilename: 'page 2(oct 29).png',
   },
   {
     id: 2,
@@ -47,6 +51,8 @@ export const ALL_FUNCTIONS: WeddingFunction[] = [
     rsvpId: 'Wedding Reception - Hotel Ramada',
     directionsUrl: 'https://maps.app.goo.gl/VC1HVfJNPzLf7CNy9',
     timestamp: new Date('2026-10-30T19:30:00').getTime(),
+    cardImagePath: '/assets/function-2-ramada.png',
+    cardImageFilename: 'page3( 30 oct).png',
   },
   {
     id: 3,
@@ -63,8 +69,52 @@ export const ALL_FUNCTIONS: WeddingFunction[] = [
     rsvpId: 'Wedding Reception - Radiant Resorts',
     directionsUrl: 'https://maps.app.goo.gl/YeqWGNYWq3HWQegm9',
     timestamp: new Date('2026-11-02T19:30:00').getTime(),
+    cardImagePath: '/assets/function-3-radiant.png',
+    cardImageFilename: 'page 4 (2 Nov).png',
   },
 ];
+
+/**
+ * Returns the card image path and metadata associated with the selected functions.
+ */
+export function getFunctionCardImage(functionIds: number[]): {
+  path: string;
+  filename: string;
+  title: string;
+} {
+  if (functionIds.length === 1) {
+    const f = ALL_FUNCTIONS.find((item) => item.id === functionIds[0]);
+    if (f) {
+      return {
+        path: f.cardImagePath,
+        filename: f.cardImageFilename,
+        title: f.title,
+      };
+    }
+  }
+
+  if (functionIds.length === 2) {
+    if (functionIds.includes(1)) {
+      return {
+        path: '/assets/function-1-rukhsati.png',
+        filename: 'page 2(oct 29).png',
+        title: 'Rukhsati & Reception',
+      };
+    }
+    return {
+      path: '/assets/function-2-ramada.png',
+      filename: 'page3( 30 oct).png',
+      title: 'Wedding Receptions',
+    };
+  }
+
+  // All 3 or general
+  return {
+    path: '/assets/function-all.png',
+    filename: 'page 1.png',
+    title: 'Sacred Wedding Invitation',
+  };
+}
 
 /**
  * Normalizes string for fuzzy/alias matching (removes symbols, spaces, lowercases)
@@ -178,11 +228,12 @@ export function parseInvitedFunctionIds(searchStr: string = ''): number[] {
     return [1, 2, 3];
   }
 
-  const query = searchStr || (typeof window !== 'undefined' ? window.location.search : '');
-  if (!query) {
+  const rawStr = searchStr || (typeof window !== 'undefined' ? window.location.search : '');
+  if (!rawStr) {
     return [1, 2, 3];
   }
 
+  const query = rawStr.includes('?') ? rawStr.slice(rawStr.indexOf('?') + 1) : rawStr;
   const params = new URLSearchParams(query);
 
   // 1. Gather all values from common parameter keys
@@ -278,9 +329,10 @@ export function parseInvitedFunctionIds(searchStr: string = ''): number[] {
  */
 export function parseGuestName(searchStr: string = ''): string {
   if (typeof window === 'undefined' && !searchStr) return '';
-  const query = searchStr || (typeof window !== 'undefined' ? window.location.search : '');
-  if (!query) return '';
+  const rawStr = searchStr || (typeof window !== 'undefined' ? window.location.search : '');
+  if (!rawStr) return '';
 
+  const query = rawStr.includes('?') ? rawStr.slice(rawStr.indexOf('?') + 1) : rawStr;
   const params = new URLSearchParams(query);
   const raw =
     params.get('guest') ||
