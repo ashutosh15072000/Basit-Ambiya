@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import confetti from 'canvas-confetti';
 import { FloatingPetals } from './components/FloatingPetals';
 import { MusicPlayer } from './components/MusicPlayer';
 import { IntroVideo } from './components/IntroVideo';
@@ -131,6 +132,41 @@ export default function App() {
     primaryFunction.dayOfMonth === '2' ? 'nd' : 'th'
   } ${primaryFunction.monthName} ${primaryFunction.year}`;
   const scratchEventLabel = `${primaryFunction.title} Mubarak · ${primaryFunction.dayOfWeek} (${primaryFunction.venue.split(' ')[0]})`;
+
+  const [checkInScanInfo, setCheckInScanInfo] = useState<{
+    passId: string;
+    guestName: string;
+    guestCount: number;
+    events: string[];
+  } | null>(null);
+
+  useEffect(() => {
+    // Check if URL is a check-in scan from QR code
+    if (typeof window !== 'undefined' && window.location?.search) {
+      const p = new URLSearchParams(window.location.search);
+      if (p.get('checkin') === 'verified' || (p.get('pass') && p.get('name'))) {
+        const passId = p.get('pass') || 'BA-VERIFIED';
+        const name = p.get('name') || 'Honored Guest';
+        const guests = parseInt(p.get('guests') || '1', 10);
+        const eventsStr = p.get('events') || '';
+        const events = eventsStr ? eventsStr.split('|') : ['Wedding Celebrations'];
+
+        setCheckInScanInfo({
+          passId,
+          guestName: name,
+          guestCount: isNaN(guests) ? 1 : guests,
+          events,
+        });
+
+        confetti({
+          particleCount: 70,
+          spread: 70,
+          origin: { y: 0.35 },
+          colors: ['#c5a059', '#1b4332', '#93203c', '#e4c88a'],
+        });
+      }
+    }
+  }, []);
 
   useEffect(() => {
     // Secret trigger for host only: ?admin=rsvp
@@ -415,6 +451,60 @@ export default function App() {
           <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
           <span>Host RSVP Panel (?admin=rsvp)</span>
         </button>
+      )}
+
+      {/* Venue Check-in Verification Popup when QR is Scanned */}
+      {checkInScanInfo && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fade-in">
+          <div className="relative w-full max-w-md bg-gradient-to-b from-[#fdfbf7] via-[#faf5ed] to-[#f4eee4] border-2 border-emerald-600 rounded-3xl p-6 sm:p-8 shadow-2xl text-center space-y-4">
+            <div className="w-14 h-14 rounded-full bg-emerald-700 text-white flex items-center justify-center mx-auto shadow-md">
+              <span className="text-2xl font-bold">✓</span>
+            </div>
+
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-100 text-emerald-900 border border-emerald-400 font-cinzel text-xs font-bold uppercase tracking-wider">
+              <span>VIP Entry Verified</span>
+            </div>
+
+            <h3 className="font-cinzel text-2xl font-bold text-emerald-950 uppercase tracking-wide">
+              Welcome, {checkInScanInfo.guestName}!
+            </h3>
+
+            <p className="font-serif-display italic text-sm text-foreground/80">
+              Your digital wedding entry pass has been successfully verified for entrance.
+            </p>
+
+            <div className="bg-white/95 rounded-2xl p-4 border border-gold-soft/60 shadow-xs space-y-2 text-left text-xs font-serif-display">
+              <div className="flex justify-between border-b border-gold-soft/30 pb-1.5">
+                <span className="font-cinzel text-foreground/60 uppercase">Pass ID</span>
+                <span className="font-mono font-bold text-emerald-900">{checkInScanInfo.passId}</span>
+              </div>
+              <div className="flex justify-between border-b border-gold-soft/30 pb-1.5">
+                <span className="font-cinzel text-foreground/60 uppercase">Party Size</span>
+                <span className="font-bold text-foreground">
+                  {checkInScanInfo.guestCount} {checkInScanInfo.guestCount === 1 ? 'Guest' : 'Guests'} Admitted
+                </span>
+              </div>
+              <div className="space-y-1 pt-1">
+                <span className="font-cinzel text-[10px] text-foreground/60 uppercase block">Ceremonies</span>
+                <div className="flex flex-wrap gap-1">
+                  {checkInScanInfo.events.map((ev, i) => (
+                    <span key={i} className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-900 font-semibold text-[11px] border border-emerald-300">
+                      {ev}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setCheckInScanInfo(null)}
+              className="w-full py-3 rounded-xl bg-emerald-800 hover:bg-emerald-900 text-white font-cinzel text-xs font-bold uppercase tracking-wider transition-all shadow-md cursor-pointer"
+            >
+              Proceed to Celebrations
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );

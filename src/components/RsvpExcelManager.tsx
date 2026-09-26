@@ -24,6 +24,7 @@ import {
   UserCheck,
   Plus,
   Image as ImageIcon,
+  QrCode,
 } from 'lucide-react';
 import {
   RsvpRecord,
@@ -52,6 +53,11 @@ import {
   getFunctionCardImage,
 } from '../utils/invitationConfig';
 import { getAssetPath } from '../utils/assets';
+import {
+  GuestCheckInPass,
+  generatePassId,
+  CheckInPassData,
+} from './GuestCheckInPass';
 
 export interface SavedGuestInvite {
   id: string;
@@ -97,6 +103,7 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
   });
   const [inviteSearch, setInviteSearch] = useState('');
   const [selectedCardImageId, setSelectedCardImageId] = useState<string>('auto');
+  const [viewPassGuest, setViewPassGuest] = useState<CheckInPassData | null>(null);
 
   const resolveActiveCard = (
     functionIds: number[],
@@ -887,13 +894,14 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
                     <th className="p-3">Ceremonies</th>
                     <th className="p-3">Message</th>
                     <th className="p-3">Date</th>
+                    <th className="p-3 text-center">QR Pass</th>
                     <th className="p-3 text-right">Delete</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gold-soft/20 font-serif-display">
                   {rsvps.length === 0 ? (
                     <tr>
-                      <td colSpan={9} className="p-8 text-center text-foreground/60 italic text-sm">
+                      <td colSpan={10} className="p-8 text-center text-foreground/60 italic text-sm">
                         No RSVP responses recorded yet. As guests submit the form, their names and details will appear here and in the Excel sheet!
                       </td>
                     </tr>
@@ -925,6 +933,33 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
                         </td>
                         <td className="p-3 text-foreground/60 text-[11px] whitespace-nowrap">
                           {new Date(rsvp.submitted_at).toLocaleDateString()}
+                        </td>
+                        <td className="p-3 text-center">
+                          {rsvp.attending === 'yes' ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const pass: CheckInPassData = {
+                                  passId: generatePassId(rsvp.guest_name, new Date(rsvp.submitted_at).getTime()),
+                                  guestName: rsvp.guest_name,
+                                  guestCount: rsvp.guest_count,
+                                  phone: rsvp.phone || undefined,
+                                  events: rsvp.events.length > 0 ? rsvp.events : ['Wedding Celebrations'],
+                                  dietary: rsvp.dietary || undefined,
+                                  timestamp: new Date(rsvp.submitted_at).getTime(),
+                                  verified: true,
+                                };
+                                setViewPassGuest(pass);
+                              }}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-cinzel font-bold text-emerald-900 bg-emerald-100 hover:bg-emerald-200 transition-colors cursor-pointer"
+                              title={`View/Print QR Check-In Pass for ${rsvp.guest_name}`}
+                            >
+                              <QrCode className="w-3.5 h-3.5 text-emerald-700" />
+                              <span>Pass</span>
+                            </button>
+                          ) : (
+                            <span className="text-foreground/40 text-[11px]">—</span>
+                          )}
                         </td>
                         <td className="p-3 text-right">
                           <button
@@ -1614,6 +1649,29 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
 
                           <button
                             type="button"
+                            onClick={() => {
+                              const pass: CheckInPassData = {
+                                passId: generatePassId(item.guestName),
+                                guestName: item.guestName,
+                                guestCount: 2,
+                                events: item.functionIds.map((id) => {
+                                  const f = ALL_FUNCTIONS.find((fn) => fn.id === id);
+                                  return f ? `${f.title} (${f.venue})` : `Function ${id}`;
+                                }),
+                                timestamp: Date.now(),
+                                verified: true,
+                              };
+                              setViewPassGuest(pass);
+                            }}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-cinzel font-bold text-emerald-900 bg-emerald-100 hover:bg-emerald-200 transition-colors cursor-pointer"
+                            title="View / Print personalized QR Check-in Pass"
+                          >
+                            <QrCode className="w-3.5 h-3.5 text-emerald-700" />
+                            <span>QR Pass</span>
+                          </button>
+
+                          <button
+                            type="button"
                             onClick={() => handleDownloadCardImage(item.functionIds)}
                             className="p-1.5 rounded-lg text-emerald-800 hover:text-emerald-950 hover:bg-emerald-100 transition-colors cursor-pointer"
                             title="Download ceremony card image"
@@ -1669,6 +1727,28 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
           </button>
         </div>
       </div>
+
+      {/* Guest Check-in Pass Preview Modal */}
+      {viewPassGuest && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs animate-fade-in">
+          <div className="relative w-full max-w-xl max-h-[92vh] overflow-y-auto">
+            <div className="sticky top-2 right-2 z-10 flex justify-end mb-2">
+              <button
+                type="button"
+                onClick={() => setViewPassGuest(null)}
+                className="w-8 h-8 rounded-full bg-stone-900/80 text-white flex items-center justify-center hover:bg-stone-900 cursor-pointer shadow-lg"
+              >
+                ✕
+              </button>
+            </div>
+            <GuestCheckInPass
+              passData={viewPassGuest}
+              onBackOrEdit={() => setViewPassGuest(null)}
+              showBackOption={true}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 };
