@@ -91,6 +91,56 @@ export const ALL_FUNCTIONS: WeddingFunction[] = [
   },
 ];
 
+export interface CardImageOption {
+  id: string;
+  title: string;
+  subtitle: string;
+  path: string;
+  filename: string;
+  functionId?: number;
+}
+
+export const ALL_CARD_OPTIONS: CardImageOption[] = [
+  {
+    id: 'rukhsati',
+    title: 'Rukhsati Ceremony Card',
+    subtitle: 'Shimla Resort · Thursday, 29th Oct',
+    path: 'assets/page 2(oct 29).png',
+    filename: 'page 2(oct 29).png',
+    functionId: 1,
+  },
+  {
+    id: 'ramada',
+    title: 'Hotel Ramada Reception Card',
+    subtitle: 'Hotel Ramada · Friday, 30th Oct',
+    path: 'assets/page3( 30 oct).png',
+    filename: 'page3( 30 oct).png',
+    functionId: 2,
+  },
+  {
+    id: 'radiant',
+    title: 'Radiant Resorts Reception Card',
+    subtitle: 'Radiant Resorts · Monday, 2nd Nov',
+    path: 'assets/page 4 (2 Nov).png',
+    filename: 'page 4 (2 Nov).png',
+    functionId: 3,
+  },
+  {
+    id: 'main',
+    title: 'Main Wedding Invitation Card',
+    subtitle: 'With Love, Joy & Gratitude (Suite Page 2)',
+    path: 'assets/page 1.png',
+    filename: 'page 1.png',
+  },
+  {
+    id: 'prelude',
+    title: 'Sacred Prelude Swing Card',
+    subtitle: '#BasitGotAmbitious Floral Blessing (Suite Page 1)',
+    path: 'assets/Basti&Ambiya11.webp',
+    filename: 'Basti&Ambiya11.webp',
+  },
+];
+
 /**
  * Returns the card image path and metadata associated with the selected functions.
  */
@@ -504,7 +554,13 @@ export function buildWhatsAppMessage(
     .map((id) => {
       const f = ALL_FUNCTIONS.find((item) => item.id === id);
       if (!f) return null;
-      return `✨ *${f.title}*\n   📅 ${f.dateLabel}\n   📍 ${f.venue}`;
+      return (
+        `✨ *${f.title}*\n` +
+        `   📅 ${f.dateLabel}\n` +
+        `   ⏰ ${f.timeLabel}\n` +
+        `   📍 *Venue:* ${f.venue}\n` +
+        `   🗺️ *Location Map:* ${f.directionsUrl}`
+      );
     })
     .filter(Boolean)
     .join('\n\n');

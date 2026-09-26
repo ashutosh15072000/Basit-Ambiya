@@ -44,6 +44,8 @@ import {
 } from '../services/wishesService';
 import {
   ALL_FUNCTIONS,
+  ALL_CARD_OPTIONS,
+  CardImageOption,
   buildInviteUrl,
   buildWhatsAppMessage,
   getInvitedFunctionsDescription,
@@ -94,6 +96,31 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
     return [];
   });
   const [inviteSearch, setInviteSearch] = useState('');
+  const [selectedCardImageId, setSelectedCardImageId] = useState<string>('auto');
+
+  const resolveActiveCard = (
+    functionIds: number[],
+    chosenCardId: string
+  ): { path: string; filename: string; title: string; subtitle: string } => {
+    if (chosenCardId !== 'auto') {
+      const found = ALL_CARD_OPTIONS.find((c) => c.id === chosenCardId);
+      if (found) {
+        return {
+          path: found.path,
+          filename: found.filename,
+          title: found.title,
+          subtitle: found.subtitle,
+        };
+      }
+    }
+    const autoCard = getFunctionCardImage(functionIds);
+    return {
+      path: autoCard.path,
+      filename: autoCard.filename,
+      title: autoCard.title,
+      subtitle: 'Auto-matched to invited ceremonies',
+    };
+  };
 
   const currentInviteUrl = buildInviteUrl(
     typeof window !== 'undefined' ? window.location.href : '',
@@ -122,8 +149,13 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
     }
   };
 
-  const handleWhatsAppShare = async (name: string, functionIds: number[], url: string) => {
-    const cardInfo = getFunctionCardImage(functionIds);
+  const handleWhatsAppShare = async (
+    name: string,
+    functionIds: number[],
+    url: string,
+    customCard?: { path: string; filename: string; title: string }
+  ) => {
+    const cardInfo = customCard || resolveActiveCard(functionIds, selectedCardImageId);
     const assetUrl = getAssetPath(cardInfo.path);
     const text = buildWhatsAppMessage(name, functionIds, url);
 
@@ -159,20 +191,23 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
         ]);
         setSyncFeedback({
           type: 'success',
-          message: `Ceremony card photo copied! Press Ctrl+V (or Paste) in WhatsApp to attach the photo.`,
+          message: `"${cardInfo.title}" photo copied! Press Ctrl+V (or Paste) in WhatsApp to attach the photo.`,
         });
       }
     } catch {
       // clipboard image writing not supported everywhere, continue
     }
 
-    // 3. Open WhatsApp link with pre-filled invitation text & direct image link
+    // 3. Open WhatsApp link with pre-filled invitation text & location map links
     const whatsappUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
     window.open(whatsappUrl, '_blank');
   };
 
-  const handleDownloadCardImage = async (functionIds: number[]) => {
-    const cardInfo = getFunctionCardImage(functionIds);
+  const handleDownloadCardImage = async (
+    functionIds: number[],
+    customCard?: { path: string; filename: string; title: string }
+  ) => {
+    const cardInfo = customCard || resolveActiveCard(functionIds, selectedCardImageId);
     const assetUrl = getAssetPath(cardInfo.path);
 
     try {
@@ -1294,9 +1329,75 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
                     </span>
                   </div>
 
+                  {/* Card Image Selector for Functions */}
+                  <div className="p-3.5 rounded-xl bg-stone-50 border border-gold-soft/50 space-y-2.5">
+                    <div className="flex flex-wrap items-center justify-between gap-1.5">
+                      <label className="font-cinzel text-xs font-bold text-amber-950 flex items-center gap-1.5">
+                        <ImageIcon className="w-3.5 h-3.5 text-emerald-700" />
+                        <span>Select Card Image to Attach & Send:</span>
+                      </label>
+                      <span className="text-[11px] font-serif-display text-emerald-800 font-medium">
+                        {selectedCardImageId === 'auto'
+                          ? '⚡ Auto-matched to invited ceremonies'
+                          : 'Custom card selected'}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedCardImageId('auto')}
+                        className={`p-2 rounded-xl text-left border transition-all cursor-pointer flex flex-col justify-between ${
+                          selectedCardImageId === 'auto'
+                            ? 'bg-emerald-800 text-white border-emerald-900 shadow-xs ring-2 ring-emerald-500/40'
+                            : 'bg-white border-stone-200 text-stone-700 hover:bg-stone-50'
+                        }`}
+                        title="Automatically attach ceremony card matching selected functions"
+                      >
+                        <span className="font-cinzel font-bold text-[11px] flex items-center gap-1">
+                          <span>⚡</span> Auto Match
+                        </span>
+                        <span className="text-[10px] opacity-80 font-serif-display truncate">
+                          Invited ceremonies
+                        </span>
+                      </button>
+
+                      {ALL_CARD_OPTIONS.map((opt) => {
+                        const isSelected = selectedCardImageId === opt.id;
+                        return (
+                          <button
+                            key={opt.id}
+                            type="button"
+                            onClick={() => setSelectedCardImageId(opt.id)}
+                            className={`p-1.5 rounded-xl text-left border transition-all cursor-pointer flex items-center gap-2 ${
+                              isSelected
+                                ? 'bg-emerald-800 text-white border-emerald-900 shadow-xs ring-2 ring-emerald-500/40'
+                                : 'bg-white border-stone-200 text-stone-700 hover:bg-stone-50'
+                            }`}
+                            title={`Select ${opt.title}`}
+                          >
+                            <img
+                              src={getAssetPath(opt.path)}
+                              alt={opt.title}
+                              className="w-7 h-9 object-cover rounded shrink-0 border border-black/10 bg-stone-100"
+                            />
+                            <div className="min-w-0">
+                              <span className="font-cinzel font-bold text-[10px] block truncate">
+                                {opt.title.replace(' Ceremony Card', '').replace(' Card', '')}
+                              </span>
+                              <span className="text-[9px] opacity-75 font-serif-display block truncate">
+                                {opt.subtitle.split('·')[1]?.trim() || opt.subtitle}
+                              </span>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
                   {/* Attached Function Card Image Box for WhatsApp */}
                   {(() => {
-                    const cardInfo = getFunctionCardImage(inviteSelectedFunctions);
+                    const cardInfo = resolveActiveCard(inviteSelectedFunctions, selectedCardImageId);
                     return (
                       <div className="p-4 rounded-xl bg-gradient-to-r from-emerald-50 via-[#f8faf8] to-emerald-50/50 border-2 border-emerald-500/40 flex flex-col sm:flex-row items-center justify-between gap-4">
                         <div className="flex items-center gap-3.5 w-full sm:w-auto">
@@ -1318,11 +1419,11 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
                                 <span>Attached Image</span>
                               </span>
                               <span className="font-serif-display font-semibold text-xs text-emerald-950">
-                                {cardInfo.title} Card
+                                {cardInfo.title}
                               </span>
                             </div>
                             <p className="font-serif-display text-xs text-foreground/75">
-                              Attached automatically when sending via WhatsApp native share or rich link preview.
+                              Attached automatically when sending via WhatsApp native share or clipboard photo paste.
                             </p>
                             <p className="font-mono text-[10px] text-foreground/50">
                               File: {cardInfo.filename}
@@ -1333,7 +1434,7 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
                         <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto justify-end">
                           <button
                             type="button"
-                            onClick={() => handleDownloadCardImage(inviteSelectedFunctions)}
+                            onClick={() => handleDownloadCardImage(inviteSelectedFunctions, cardInfo)}
                             className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-white border border-emerald-300 hover:bg-emerald-50 text-emerald-900 font-cinzel text-xs font-bold transition-all shadow-xs cursor-pointer"
                             title="Download ceremony card image directly"
                           >
@@ -1347,11 +1448,12 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
                               handleWhatsAppShare(
                                 inviteGuestName,
                                 inviteSelectedFunctions,
-                                currentInviteUrl
+                                currentInviteUrl,
+                                cardInfo
                               )
                             }
                             className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-cinzel text-xs font-bold transition-all shadow-xs cursor-pointer"
-                            title="Share on WhatsApp with attached card image"
+                            title="Share on WhatsApp with attached card image and venue location link"
                           >
                             <Share2 className="w-3.5 h-3.5" />
                             <span>WhatsApp</span>
