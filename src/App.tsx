@@ -16,6 +16,12 @@ import { AnimatedSection } from './components/AnimatedSection';
 import { FloatingRsvpButton } from './components/FloatingRsvpButton';
 import { InvitationPageCard } from './components/InvitationPageCard';
 import { RsvpExcelManager } from './components/RsvpExcelManager';
+import { PersonalizedGuestBanner } from './components/PersonalizedGuestBanner';
+import {
+  parseInvitedFunctionIds,
+  parseGuestName,
+  ALL_FUNCTIONS,
+} from './utils/invitationConfig';
 import { getAssetPath } from './utils/assets';
 import { EventDetails } from './types';
 
@@ -102,6 +108,28 @@ export default function App() {
   const [showAdminExcel, setShowAdminExcel] = useState(false);
   const [isAdminMode, setIsAdminMode] = useState(false);
 
+  // Dynamic guest invitation parameters (?guest=Name&f=1,2)
+  const [invitedFunctionIds, setInvitedFunctionIds] = useState<number[]>(() =>
+    parseInvitedFunctionIds(typeof window !== 'undefined' ? window.location.search : '')
+  );
+  const [guestName, setGuestName] = useState<string>(() =>
+    parseGuestName(typeof window !== 'undefined' ? window.location.search : '')
+  );
+
+  // Filter events schedule according to invited functions (1: Rukhsati, 2: Ramada, 3: Radiant)
+  const visibleEventsSchedule = EVENTS_SCHEDULE.filter((_, idx) =>
+    invitedFunctionIds.includes(idx + 1)
+  );
+
+  // Compute countdown target and scratch card text based on the earliest invited function
+  const primaryFunction =
+    ALL_FUNCTIONS.find((f) => invitedFunctionIds.includes(f.id)) || ALL_FUNCTIONS[0];
+  const targetTimestamp = primaryFunction.timestamp;
+  const scratchDateText = `${primaryFunction.dayOfMonth}${
+    primaryFunction.dayOfMonth === '2' ? 'nd' : 'th'
+  } ${primaryFunction.monthName} ${primaryFunction.year}`;
+  const scratchEventLabel = `${primaryFunction.title} Mubarak · ${primaryFunction.dayOfWeek} (${primaryFunction.venue.split(' ')[0]})`;
+
   useEffect(() => {
     // Secret trigger for host only: ?admin=rsvp
     if (typeof window !== 'undefined' && window.location?.search) {
@@ -169,6 +197,14 @@ export default function App() {
 
       {/* Main Wedding Invitation Page - pre-mounted for instant zero-latency display */}
       <main className="relative bg-cream">
+        {/* Personalized Guest Welcome Banner (Visible when personalized link used or in admin mode) */}
+        <PersonalizedGuestBanner
+          guestName={guestName}
+          invitedFunctionIds={invitedFunctionIds}
+          isAdmin={isAdminMode}
+          onSelectFunctions={(ids) => setInvitedFunctionIds(ids)}
+        />
+
         {/* Invitation Suite Section - Clean presentation without background distractions */}
   
         <section className="relative w-full pt-4 sm:pt-10 pb-12 sm:pb-16 flex flex-col items-center justify-center px-1 sm:px-4 md:px-6 select-none border-b border-gold-soft/30">
@@ -217,6 +253,8 @@ export default function App() {
                   <ScratchCard
                     revealed={dateRevealed}
                     onRevealed={() => setDateRevealed(true)}
+                    dateText={scratchDateText}
+                    eventLabel={scratchEventLabel}
                   />
                 </div>
               </AnimatedSection>
@@ -228,7 +266,10 @@ export default function App() {
                 }`}
                 aria-hidden={!dateRevealed}
               >
-                <CountdownTimer />
+                <CountdownTimer
+                  targetTimestamp={targetTimestamp}
+                  eventLabel={scratchEventLabel}
+                />
               </div>
             </div>
           </section>
@@ -252,8 +293,16 @@ export default function App() {
                   <FlowerDivider />
                 </div>
               </AnimatedSection>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-7xl mx-auto items-stretch">
-                {EVENTS_SCHEDULE.map((event, idx) => (
+              <div
+                className={`gap-8 mx-auto items-stretch ${
+                  visibleEventsSchedule.length === 1
+                    ? 'flex justify-center max-w-md'
+                    : visibleEventsSchedule.length === 2
+                    ? 'grid grid-cols-1 md:grid-cols-2 max-w-4xl'
+                    : 'grid grid-cols-1 md:grid-cols-3 max-w-7xl'
+                }`}
+              >
+                {visibleEventsSchedule.map((event, idx) => (
                   <AnimatedSection
                     key={`${event.title}-${event.date}-${event.venue}`}
                     direction={idx === 1 ? 'up' : idx === 0 ? 'right' : 'left'}
@@ -311,7 +360,10 @@ export default function App() {
               </AnimatedSection>
 
               <AnimatedSection direction="zoom" delayMs={150} durationMs={750}>
-                <RsvpForm />
+                <RsvpForm
+                  invitedFunctionIds={invitedFunctionIds}
+                  initialGuestName={guestName}
+                />
               </AnimatedSection>
             </div>
           </section>

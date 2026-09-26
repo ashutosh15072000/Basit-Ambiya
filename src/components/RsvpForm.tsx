@@ -1,43 +1,83 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Heart, Loader2 } from 'lucide-react';
 import { FlowerDivider } from './Ornaments';
 import { RsvpData } from '../types';
 import { addRsvpEntry } from '../services/rsvpExcelService';
 import { addWeddingWish } from '../services/wishesService';
 
-const RSVP_EVENTS = [
+interface RsvpEventItem {
+  functionId: number;
+  id: string;
+  label: string;
+  ceremony: string;
+  date: string;
+}
+
+const ALL_RSVP_EVENTS: RsvpEventItem[] = [
   {
+    functionId: 1,
     id: 'Rukhsati',
     label: 'Rukhsati (Shimla Resort)',
+    ceremony: 'Rukhsati',
     date: 'Thursday, 29th October 2026',
   },
   {
+    functionId: 2,
     id: 'Wedding Reception - Hotel Ramada',
     label: 'Wedding Reception (Hotel Ramada)',
+    ceremony: 'Reception (Hotel Ramada)',
     date: 'Friday, 30th October 2026',
   },
   {
+    functionId: 3,
     id: 'Wedding Reception - Radiant Resorts',
     label: 'Wedding Reception (Radiant Resorts Gorakhpur)',
+    ceremony: 'Reception (Radiant Resorts)',
     date: 'Monday, 2nd November 2026',
   },
 ];
 
-export const RsvpForm: React.FC = () => {
+interface RsvpFormProps {
+  invitedFunctionIds?: number[];
+  initialGuestName?: string;
+}
+
+export const RsvpForm: React.FC<RsvpFormProps> = ({
+  invitedFunctionIds = [1, 2, 3],
+  initialGuestName = '',
+}) => {
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [submittedHasMessage, setSubmittedHasMessage] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const visibleEvents = ALL_RSVP_EVENTS.filter((e) =>
+    invitedFunctionIds.includes(e.functionId)
+  );
+
   const [form, setForm] = useState<RsvpData>({
-    guest_name: '',
+    guest_name: initialGuestName,
     phone: '',
     attending: 'yes',
     guest_count: 1,
-    events: [],
+    events: visibleEvents.length === 1 ? [visibleEvents[0].id] : [],
     dietary: '',
     message: '',
   });
+
+  // Keep guest name in sync if URL param loaded
+  useEffect(() => {
+    if (initialGuestName && !form.guest_name) {
+      setForm((prev) => ({ ...prev, guest_name: initialGuestName }));
+    }
+  }, [initialGuestName]);
+
+  // If invited functions change, ensure selected events are valid
+  useEffect(() => {
+    if (visibleEvents.length === 1 && form.events.length === 0) {
+      setForm((prev) => ({ ...prev, events: [visibleEvents[0].id] }));
+    }
+  }, [invitedFunctionIds.join(',')]);
 
   const toggleEvent = (eventId: string, isChecked: boolean) => {
     setForm((prev) => ({
@@ -269,10 +309,10 @@ export const RsvpForm: React.FC = () => {
 
           <div className="space-y-3">
             <label className="font-cinzel text-[10px] tracking-widest text-[#a84c32] font-bold uppercase block">
-              Events You'll Attend
+              {visibleEvents.length === 1 ? 'Invited Celebration' : "Events You'll Attend"}
             </label>
             <div className="grid grid-cols-1 gap-3">
-              {RSVP_EVENTS.map((event, idx) => {
+              {visibleEvents.map((event, idx) => {
                 const isSelected = form.events.includes(event.id);
                 return (
                   <button
@@ -287,7 +327,7 @@ export const RsvpForm: React.FC = () => {
                   >
                     <div className="flex items-center justify-between w-full">
                       <span className="font-serif-display font-semibold text-sm sm:text-base text-rose-deep">
-                        Day {idx + 1}: {event.label}
+                        {visibleEvents.length > 1 ? `Celebration ${idx + 1}: ` : ''}{event.label}
                       </span>
                       <div
                         className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 ml-4 ${

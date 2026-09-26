@@ -17,6 +17,12 @@ import {
   Trash2,
   MessageSquareHeart,
   Search,
+  Link2,
+  Share2,
+  Copy,
+  Check,
+  UserCheck,
+  Plus,
 } from 'lucide-react';
 import {
   RsvpRecord,
@@ -35,6 +41,20 @@ import {
   deleteWeddingWish,
   pushWishesToGitHub,
 } from '../services/wishesService';
+import {
+  ALL_FUNCTIONS,
+  buildInviteUrl,
+  buildWhatsAppMessage,
+  getInvitedFunctionsDescription,
+} from '../utils/invitationConfig';
+
+export interface SavedGuestInvite {
+  id: string;
+  guestName: string;
+  functionIds: number[];
+  url: string;
+  createdAt: string;
+}
 
 interface RsvpExcelManagerProps {
   isOpen: boolean;
@@ -42,7 +62,7 @@ interface RsvpExcelManagerProps {
 }
 
 export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onClose }) => {
-  const [activeTab, setActiveTab] = useState<'rsvps' | 'wishes'>('rsvps');
+  const [activeTab, setActiveTab] = useState<'rsvps' | 'wishes' | 'invites'>('rsvps');
   const [rsvps, setRsvps] = useState<RsvpRecord[]>([]);
   const [wishes, setWishes] = useState<WeddingWish[]>([]);
   const [wishSearch, setWishSearch] = useState('');
@@ -58,6 +78,84 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
     message: string;
     commitUrl?: string;
   }>({ type: null, message: '' });
+
+  // Guest Invite Link Generator State
+  const [inviteGuestName, setInviteGuestName] = useState('');
+  const [inviteSelectedFunctions, setInviteSelectedFunctions] = useState<number[]>([1, 2]);
+  const [copiedInviteUrl, setCopiedInviteUrl] = useState<string | null>(null);
+  const [savedInvites, setSavedInvites] = useState<SavedGuestInvite[]>(() => {
+    try {
+      const raw = localStorage.getItem('wedding_saved_guest_invites');
+      if (raw) return JSON.parse(raw);
+    } catch {}
+    return [];
+  });
+  const [inviteSearch, setInviteSearch] = useState('');
+
+  const currentInviteUrl = buildInviteUrl(
+    typeof window !== 'undefined' ? window.location.href : '',
+    inviteGuestName,
+    inviteSelectedFunctions
+  );
+
+  const toggleInviteFunction = (id: number) => {
+    setInviteSelectedFunctions((prev) => {
+      if (prev.includes(id)) {
+        if (prev.length === 1) return prev; // Keep at least one
+        return prev.filter((item) => item !== id);
+      } else {
+        return [...prev, id].sort((a, b) => a - b);
+      }
+    });
+  };
+
+  const handleCopyUrl = async (url: string) => {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopiedInviteUrl(url);
+      setTimeout(() => setCopiedInviteUrl(null), 2500);
+    } catch (e) {
+      console.warn('Copy failed:', e);
+    }
+  };
+
+  const handleWhatsAppShare = (name: string, functionIds: number[], url: string) => {
+    const text = buildWhatsAppMessage(name, functionIds, url);
+    const whatsappUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
+    window.open(whatsappUrl, '_blank');
+  };
+
+  const handleSaveInvite = () => {
+    const newEntry: SavedGuestInvite = {
+      id: `inv-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      guestName: inviteGuestName.trim() || 'General Invitation',
+      functionIds: inviteSelectedFunctions,
+      url: currentInviteUrl,
+      createdAt: new Date().toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+      }),
+    };
+
+    const updated = [newEntry, ...savedInvites.filter((i) => i.guestName !== newEntry.guestName)];
+    setSavedInvites(updated);
+    try {
+      localStorage.setItem('wedding_saved_guest_invites', JSON.stringify(updated));
+    } catch {}
+
+    setSyncFeedback({
+      type: 'success',
+      message: `Personal invitation for "${newEntry.guestName}" saved to list!`,
+    });
+  };
+
+  const handleDeleteSavedInvite = (id: string) => {
+    const updated = savedInvites.filter((i) => i.id !== id);
+    setSavedInvites(updated);
+    try {
+      localStorage.setItem('wedding_saved_guest_invites', JSON.stringify(updated));
+    } catch {}
+  };
 
   const loadData = () => {
     setRsvps(getStoredRsvps());
@@ -345,6 +443,22 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
             <span>Guest Wishes &amp; Duas</span>
             <span className="px-2 py-0.5 rounded-full text-[10px] bg-[#93203c]/10 text-[#93203c] font-mono">
               {wishes.length}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('invites')}
+            className={`inline-flex items-center gap-2 px-4 py-2.5 font-cinzel text-xs font-bold uppercase tracking-wider rounded-t-xl transition-all cursor-pointer border-t-2 border-x-2 ${
+              activeTab === 'invites'
+                ? 'bg-[#faf8f5] text-[#b45309] border-[#e4c88a] shadow-xs'
+                : 'bg-transparent text-foreground/60 border-transparent hover:text-foreground hover:bg-black/5'
+            }`}
+          >
+            <Link2 className="w-4 h-4 text-[#b45309]" />
+            <span>Guest Invite Links</span>
+            <span className="px-2 py-0.5 rounded-full text-[10px] bg-amber-100 text-amber-900 font-mono font-bold">
+              {savedInvites.length > 0 ? savedInvites.length : 'New'}
             </span>
           </button>
         </div>
@@ -722,7 +836,7 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
             </div>
           </div>
             </>
-          ) : (
+          ) : activeTab === 'wishes' ? (
             /* Wishes Moderation Tab */
             <div className="space-y-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-[#f3ede2] rounded-xl border border-gold-soft/60">
@@ -833,6 +947,451 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
                     </div>
                   ))
                 )}
+              </div>
+            </div>
+          ) : (
+            /* Invite Link Generator Tab */
+            <div className="space-y-6">
+              {/* Header Box */}
+              <div className="p-5 rounded-2xl bg-gradient-to-r from-amber-900/10 via-amber-800/5 to-transparent border border-gold-soft/80 space-y-2">
+                <div className="flex items-center gap-2">
+                  <Link2 className="w-5 h-5 text-amber-800" />
+                  <h4 className="font-cinzel text-base font-bold text-foreground">
+                    Function-Specific Guest Link Generator
+                  </h4>
+                </div>
+                <p className="font-serif-display text-sm text-foreground/80 leading-relaxed">
+                  Send customized invitation links using <strong>function names in the URL parameter</strong> (e.g.{' '}
+                  <code className="px-1.5 py-0.5 rounded bg-amber-100/80 text-amber-950 font-mono text-xs font-semibold">?function=rukhsati</code> or{' '}
+                  <code className="px-1.5 py-0.5 rounded bg-amber-100/80 text-amber-950 font-mono text-xs font-semibold">?functions=rukhsati,ramada</code>).
+                  When a guest opens their link, <strong>only those function details will appear on the website</strong> (Events Schedule, Countdown, and RSVP). All other functions are completely hidden!
+                </p>
+              </div>
+
+              {/* Feedback Banner */}
+              {syncFeedback.type && (
+                <div
+                  className={`p-4 rounded-xl border flex items-center justify-between gap-3 ${
+                    syncFeedback.type === 'success'
+                      ? 'bg-emerald-50 border-emerald-300 text-emerald-900'
+                      : 'bg-rose-50 border-rose-300 text-rose-900'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    {syncFeedback.type === 'success' ? (
+                      <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                    ) : (
+                      <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
+                    )}
+                    <p className="text-sm font-semibold">{syncFeedback.message}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSyncFeedback({ type: null, message: '' })}
+                    className="text-foreground/40 hover:text-foreground text-sm cursor-pointer"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
+
+              {/* Interactive Builder Card */}
+              <div className="bg-white p-6 rounded-2xl border border-gold-soft/70 shadow-sm space-y-5">
+                {/* 1. Guest Name Input */}
+                <div className="space-y-1.5">
+                  <label className="block font-cinzel text-xs font-bold uppercase tracking-wider text-foreground/80">
+                    1. Guest or Family Name (Optional)
+                  </label>
+                  <div className="relative">
+                    <UserCheck className="w-4 h-4 text-foreground/40 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      value={inviteGuestName}
+                      onChange={(e) => setInviteGuestName(e.target.value)}
+                      placeholder="e.g. Dr. Salman Qureshi, Uncle Tariq & Family, Ayesha Khan..."
+                      className="w-full pl-10 pr-4 py-2.5 text-sm bg-[#faf8f5] border border-gold-soft/80 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-amber-600 font-serif-display"
+                    />
+                  </div>
+                  <p className="font-serif-display text-xs text-foreground/60 italic">
+                    If entered, the invitation displays a royal welcome greeting card and auto-fills their name in the RSVP form.
+                  </p>
+                </div>
+
+                {/* 2. Select Functions */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <label className="block font-cinzel text-xs font-bold uppercase tracking-wider text-foreground/80">
+                      2. Select Invited Functions (Only checked functions will show)
+                    </label>
+                    {/* Quick Presets */}
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-[10px] font-cinzel uppercase text-foreground/50 font-bold mr-1">
+                        Presets:
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setInviteSelectedFunctions([1, 2, 3])}
+                        className={`px-2.5 py-1 rounded-md text-[11px] font-cinzel cursor-pointer font-bold transition-all ${
+                          inviteSelectedFunctions.length === 3
+                            ? 'bg-amber-800 text-white'
+                            : 'bg-stone-100 hover:bg-stone-200 text-stone-800'
+                        }`}
+                      >
+                        All 3 Functions
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setInviteSelectedFunctions([1, 2])}
+                        className={`px-2.5 py-1 rounded-md text-[11px] font-cinzel cursor-pointer font-bold transition-all ${
+                          inviteSelectedFunctions.length === 2 &&
+                          inviteSelectedFunctions.includes(1) &&
+                          inviteSelectedFunctions.includes(2)
+                            ? 'bg-amber-800 text-white'
+                            : 'bg-stone-100 hover:bg-stone-200 text-stone-800'
+                        }`}
+                      >
+                        Function 1 &amp; 2
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setInviteSelectedFunctions([1])}
+                        className={`px-2.5 py-1 rounded-md text-[11px] font-cinzel cursor-pointer font-bold transition-all ${
+                          inviteSelectedFunctions.length === 1 &&
+                          inviteSelectedFunctions[0] === 1
+                            ? 'bg-amber-800 text-white'
+                            : 'bg-stone-100 hover:bg-stone-200 text-stone-800'
+                        }`}
+                      >
+                        Function 1 Only
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setInviteSelectedFunctions([2, 3])}
+                        className={`px-2.5 py-1 rounded-md text-[11px] font-cinzel cursor-pointer font-bold transition-all ${
+                          inviteSelectedFunctions.length === 2 &&
+                          inviteSelectedFunctions.includes(2) &&
+                          inviteSelectedFunctions.includes(3)
+                            ? 'bg-amber-800 text-white'
+                            : 'bg-stone-100 hover:bg-stone-200 text-stone-800'
+                        }`}
+                      >
+                        Function 2 &amp; 3
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                    {ALL_FUNCTIONS.map((f) => {
+                      const isSelected = inviteSelectedFunctions.includes(f.id);
+                      return (
+                        <button
+                          key={f.id}
+                          type="button"
+                          onClick={() => toggleInviteFunction(f.id)}
+                          className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
+                            isSelected
+                              ? 'bg-amber-50/80 border-amber-500 shadow-xs ring-1 ring-amber-500'
+                              : 'bg-white border-stone-200 hover:bg-stone-50 opacity-60'
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-cinzel font-bold uppercase bg-stone-900 text-gold-light mb-1">
+                                Function {f.id}
+                              </span>
+                              <h5 className="font-serif-display font-bold text-sm text-foreground">
+                                {f.title}
+                              </h5>
+                            </div>
+                            <div
+                              className={`w-5 h-5 rounded-md border flex items-center justify-center shrink-0 ${
+                                isSelected
+                                  ? 'bg-amber-800 border-amber-800 text-white'
+                                  : 'border-stone-300 bg-white'
+                              }`}
+                            >
+                              {isSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                            </div>
+                          </div>
+                          <div className="mt-2 pt-2 border-t border-gold-soft/30 font-serif-display text-xs text-foreground/75 space-y-0.5">
+                            <p className="font-semibold text-rose-deep">{f.dateLabel}</p>
+                            <p className="text-foreground/60 truncate" title={f.venue}>
+                              📍 {f.venue}
+                            </p>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 3. Generated Link & Actions */}
+                <div className="pt-2 space-y-3">
+                  <label className="block font-cinzel text-xs font-bold uppercase tracking-wider text-foreground/80">
+                    3. Generated Personalized Link
+                  </label>
+
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                    <input
+                      type="text"
+                      readOnly
+                      value={currentInviteUrl}
+                      className="flex-1 px-3.5 py-2.5 text-xs font-mono bg-[#f6f2ea] border border-gold-soft rounded-xl text-foreground select-all focus:outline-hidden"
+                    />
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => handleCopyUrl(currentInviteUrl)}
+                        className={`inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl font-cinzel text-xs font-bold uppercase tracking-wider transition-all cursor-pointer shadow-xs ${
+                          copiedInviteUrl === currentInviteUrl
+                            ? 'bg-emerald-600 text-white'
+                            : 'bg-amber-800 hover:bg-amber-900 text-white'
+                        }`}
+                      >
+                        {copiedInviteUrl === currentInviteUrl ? (
+                          <>
+                            <Check className="w-4 h-4" />
+                            <span>Copied! ✓</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-4 h-4" />
+                            <span>Copy Link</span>
+                          </>
+                        )}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleWhatsAppShare(
+                            inviteGuestName,
+                            inviteSelectedFunctions,
+                            currentInviteUrl
+                          )
+                        }
+                        className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-cinzel text-xs font-bold uppercase tracking-wider transition-all cursor-pointer shadow-xs"
+                        title="Share invitation directly via WhatsApp"
+                      >
+                        <Share2 className="w-4 h-4" />
+                        <span>WhatsApp</span>
+                      </button>
+
+                      <a
+                        href={currentInviteUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center justify-center gap-1 px-3 py-2.5 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-800 font-cinzel text-xs font-bold transition-all"
+                        title="Open and preview in new tab"
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                        <span className="hidden sm:inline">Preview</span>
+                      </a>
+
+                      <button
+                        type="button"
+                        onClick={handleSaveInvite}
+                        className="inline-flex items-center justify-center gap-1 px-3 py-2.5 rounded-xl bg-amber-100 hover:bg-amber-200 text-amber-950 font-cinzel text-xs font-bold transition-all cursor-pointer"
+                        title="Save to directory below"
+                      >
+                        <Plus className="w-4 h-4" />
+                        <span>Save</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Summary of what guest will see */}
+                  <div className="p-3 rounded-xl bg-[#faf6f0] border border-gold-soft/40 flex items-center gap-2 text-xs font-serif-display text-foreground/80">
+                    <Sparkles className="w-4 h-4 text-amber-700 shrink-0" />
+                    <span>
+                      <strong>Guest will see:</strong>{' '}
+                      {getInvitedFunctionsDescription(inviteSelectedFunctions)}
+                      {inviteSelectedFunctions.length < 3 && (
+                        <span className="text-rose-deep font-semibold ml-1">
+                          (Other functions hidden)
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Function Names URL Parameter Cheatsheet */}
+              <div className="bg-[#faf8f5] p-5 rounded-2xl border border-gold-soft/70 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h5 className="font-cinzel text-xs font-bold uppercase tracking-wider text-amber-950 flex items-center gap-2">
+                    <span>💡 Supported Function Name Parameters Cheatsheet</span>
+                  </h5>
+                  <span className="text-[11px] font-serif-display italic text-foreground/60">
+                    Use any of these in your link
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 text-xs font-serif-display">
+                  <div className="p-3 rounded-xl bg-white border border-gold-soft/40 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-foreground">Function 1: Rukhsati</span>
+                      <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 font-mono text-[10px] font-bold">29 Oct</span>
+                    </div>
+                    <p className="text-[11px] text-foreground/70">Shimla Resort</p>
+                    <code className="block p-1.5 rounded bg-stone-100 font-mono text-[11px] text-amber-900 font-semibold select-all">
+                      ?function=rukhsati
+                    </code>
+                    <p className="text-[10px] text-foreground/50 italic">Also matches: ?function=shimla</p>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-white border border-gold-soft/40 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-foreground">Function 2: Ramada</span>
+                      <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 font-mono text-[10px] font-bold">30 Oct</span>
+                    </div>
+                    <p className="text-[11px] text-foreground/70">Hotel Ramada</p>
+                    <code className="block p-1.5 rounded bg-stone-100 font-mono text-[11px] text-amber-900 font-semibold select-all">
+                      ?function=ramada
+                    </code>
+                    <p className="text-[10px] text-foreground/50 italic">Also matches: ?function=hotel-ramada</p>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-white border border-gold-soft/40 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-foreground">Function 3: Radiant</span>
+                      <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 font-mono text-[10px] font-bold">2 Nov</span>
+                    </div>
+                    <p className="text-[11px] text-foreground/70">Radiant Resorts Gorakhpur</p>
+                    <code className="block p-1.5 rounded bg-stone-100 font-mono text-[11px] text-amber-900 font-semibold select-all">
+                      ?function=radiant
+                    </code>
+                    <p className="text-[10px] text-foreground/50 italic">Also matches: ?function=gorakhpur</p>
+                  </div>
+                </div>
+
+                <div className="pt-1 flex items-center gap-2 flex-wrap text-xs font-serif-display text-foreground/75">
+                  <span className="font-semibold text-foreground/90">Multiple Functions:</span>
+                  <code className="px-2 py-0.5 rounded bg-white border border-gold-soft/60 font-mono text-[11px] text-amber-900 select-all">
+                    ?functions=rukhsati,ramada
+                  </code>
+                  <code className="px-2 py-0.5 rounded bg-white border border-gold-soft/60 font-mono text-[11px] text-amber-900 select-all">
+                    ?functions=ramada,radiant
+                  </code>
+                  <code className="px-2 py-0.5 rounded bg-white border border-gold-soft/60 font-mono text-[11px] text-amber-900 select-all">
+                    ?functions=rukhsati,radiant
+                  </code>
+                </div>
+              </div>
+
+              {/* Saved Guest Directory */}
+              <div className="space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-[#f3ede2] rounded-xl border border-gold-soft/60">
+                  <div>
+                    <h5 className="font-cinzel text-sm font-bold text-foreground">
+                      Saved Guest Links Directory ({savedInvites.length})
+                    </h5>
+                    <p className="font-serif-display text-xs text-foreground/70 italic">
+                      Quickly re-copy links or send reminders via WhatsApp anytime.
+                    </p>
+                  </div>
+
+                  <div className="relative min-w-[220px]">
+                    <Search className="w-4 h-4 text-foreground/40 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      value={inviteSearch}
+                      onChange={(e) => setInviteSearch(e.target.value)}
+                      placeholder="Search saved guest..."
+                      className="w-full pl-9 pr-3 py-1.5 text-xs bg-white border border-gold-soft/80 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-amber-700 font-serif-display"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2.5 max-h-[380px] overflow-y-auto pr-1">
+                  {savedInvites
+                    .filter((item) => {
+                      if (!inviteSearch.trim()) return true;
+                      return item.guestName.toLowerCase().includes(inviteSearch.toLowerCase());
+                    })
+                    .map((item) => (
+                      <div
+                        key={item.id}
+                        className="p-3.5 rounded-xl bg-white border border-gold-soft/60 shadow-xs hover:border-gold transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                      >
+                        <div className="space-y-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-serif-display font-bold text-base text-foreground">
+                              {item.guestName}
+                            </span>
+                            <span className="text-[11px] text-foreground/50 font-serif-display">
+                              · {item.createdAt}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {item.functionIds.map((fId) => (
+                              <span
+                                key={fId}
+                                className="px-2 py-0.5 rounded-full text-[10px] font-cinzel font-bold uppercase bg-amber-50 text-amber-900 border border-amber-300"
+                              >
+                                Function {fId}: {fId === 1 ? 'Rukhsati' : fId === 2 ? 'Ramada' : 'Radiant'}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-center">
+                          <button
+                            type="button"
+                            onClick={() => handleCopyUrl(item.url)}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-cinzel font-bold text-stone-800 bg-stone-100 hover:bg-stone-200 transition-colors cursor-pointer"
+                            title="Copy invitation URL"
+                          >
+                            {copiedInviteUrl === item.url ? (
+                              <Check className="w-3.5 h-3.5 text-emerald-600" />
+                            ) : (
+                              <Copy className="w-3.5 h-3.5" />
+                            )}
+                            <span>{copiedInviteUrl === item.url ? 'Copied' : 'Copy'}</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleWhatsAppShare(item.guestName, item.functionIds, item.url)
+                            }
+                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-cinzel font-bold text-white bg-emerald-600 hover:bg-emerald-700 transition-colors cursor-pointer"
+                            title="Send on WhatsApp"
+                          >
+                            <Share2 className="w-3.5 h-3.5" />
+                            <span>WhatsApp</span>
+                          </button>
+
+                          <a
+                            href={item.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="p-1.5 rounded-lg text-stone-600 hover:text-stone-900 hover:bg-stone-100 transition-colors"
+                            title="Open link in new tab"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          </a>
+
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteSavedInvite(item.id)}
+                            className="p-1.5 rounded-lg text-rose-600 hover:text-rose-800 hover:bg-rose-50 transition-colors cursor-pointer"
+                            title="Delete this saved link"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+
+                  {savedInvites.length === 0 && (
+                    <div className="p-8 text-center text-foreground/60 italic font-serif-display bg-white rounded-xl border border-gold-soft/40">
+                      No personalized links saved yet. Use the generator above and click "Save" to build your guest invite directory!
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           )}

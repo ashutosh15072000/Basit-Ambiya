@@ -4,11 +4,15 @@ import confetti from 'canvas-confetti';
 interface ScratchCardProps {
   onRevealed: () => void;
   revealed: boolean;
+  dateText?: string;
+  eventLabel?: string;
 }
 
 export const ScratchCard: React.FC<ScratchCardProps> = ({
   onRevealed,
   revealed,
+  dateText = '29th October 2026',
+  eventLabel = 'Rukhsati Mubarak · Thursday',
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -149,11 +153,11 @@ export const ScratchCard: React.FC<ScratchCardProps> = ({
           </p>
           <span className="text-xs text-gold">✦</span>
         </div>
-        <p className="font-script text-4xl sm:text-5xl text-[#93203c] font-semibold">
-          29th October 2026
+        <p className="font-script text-4xl sm:text-5xl text-[#93203c] font-semibold text-center px-2">
+          {dateText}
         </p>
-        <p className="font-serif-display italic text-xs text-foreground/75 mt-0.5">
-          Rukhsati Mubarak · Thursday
+        <p className="font-serif-display italic text-xs text-foreground/75 mt-0.5 text-center">
+          {eventLabel}
         </p>
       </div>
       {!revealed && (
