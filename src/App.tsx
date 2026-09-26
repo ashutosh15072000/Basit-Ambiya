@@ -40,13 +40,14 @@ const EVENTS_SCHEDULE: EventDetails[] = [
     venue: 'Shimla Resort',
     dressCode: 'Royal Traditional / Modest Luxury',
     directionsUrl: 'https://maps.app.goo.gl/oNb7LC2ZuKpFT9b7A?g_st=ac',
-    couplePhoto: getAssetPath('assets/page 2(oct 29).webp'),
-    caricatureImage: getAssetPath('assets/page 2(oct 29).webp'),
-    caricatureBadge: 'Basit Ali and Ambiya Basher · Sacred Nikah 🕊️',
-    fullCardImage: getAssetPath('assets/page 2(oct 29).webp'),
+    couplePhoto: getAssetPath('assets/page 2(oct 29).png'),
+    caricatureImage: getAssetPath('assets/page 2(oct 29).png'),
+    caricatureBadge: 'Basit Ali and Ambiya Basher · Sacred Rukhsati 🕊️',
+    fullCardImage: getAssetPath('assets/page 2(oct 29).png'),
     cardImageCandidates: [
-      getAssetPath('assets/page 2(oct 29).webp'),
       getAssetPath('assets/page 2(oct 29).png'),
+      getAssetPath('assets/page 2(oct 29).webp'),
+      getAssetPath('assets/function-1-rukhsati.png'),
     ],
   },
   {
@@ -64,13 +65,14 @@ const EVENTS_SCHEDULE: EventDetails[] = [
     venue: 'Hotel Ramada',
     dressCode: 'Formal Evening Elegance',
     directionsUrl: 'https://maps.app.goo.gl/VC1HVfJNPzLf7CNy9',
-    couplePhoto: getAssetPath('assets/page3( 30 oct).webp'),
-    caricatureImage: getAssetPath('assets/page3( 30 oct).webp'),
+    couplePhoto: getAssetPath('assets/page3( 30 oct).png'),
+    caricatureImage: getAssetPath('assets/page3( 30 oct).png'),
     caricatureBadge: 'Basit Ali and Ambiya Basher · Wedding Reception 👑',
-    fullCardImage: getAssetPath('assets/page3( 30 oct).webp'),
+    fullCardImage: getAssetPath('assets/page3( 30 oct).png'),
     cardImageCandidates: [
-      getAssetPath('assets/page3( 30 oct).webp'),
       getAssetPath('assets/page3( 30 oct).png'),
+      getAssetPath('assets/page3( 30 oct).webp'),
+      getAssetPath('assets/function-2-ramada.png'),
     ],
   },
   {
@@ -88,13 +90,14 @@ const EVENTS_SCHEDULE: EventDetails[] = [
     venue: 'Radiant Resorts Gorakhpur',
     dressCode: 'Formal Evening Elegance',
     directionsUrl: 'https://maps.app.goo.gl/YeqWGNYWq3HWQegm9',
-    couplePhoto: getAssetPath('assets/page 4 (2 Nov).webp'),
-    caricatureImage: getAssetPath('assets/page 4 (2 Nov).webp'),
+    couplePhoto: getAssetPath('assets/page 4 (2 Nov).png'),
+    caricatureImage: getAssetPath('assets/page 4 (2 Nov).png'),
     caricatureBadge: 'Basit Ali and Ambiya Basher · Wedding Reception 👑',
-    fullCardImage: getAssetPath('assets/page 4 (2 Nov).webp'),
+    fullCardImage: getAssetPath('assets/page 4 (2 Nov).png'),
     cardImageCandidates: [
-      getAssetPath('assets/page 4 (2 Nov).webp'),
       getAssetPath('assets/page 4 (2 Nov).png'),
+      getAssetPath('assets/page 4 (2 Nov).webp'),
+      getAssetPath('assets/function-3-radiant.png'),
     ],
   }
 ];
@@ -231,61 +234,6 @@ export default function App() {
               storageKey="suite_page_1"
             />
           </AnimatedSection>
-
-          {/* Function 1: Rukhsati Card (Thursday, 29th October 2026 - Shimla Resort) */}
-          {invitedFunctionIds.includes(1) && (
-            <AnimatedSection direction="up" durationMs={700} delayMs={200}>
-              <InvitationPageCard
-                pageLabel="Wedding Suite · Page 3 (Rukhsati)"
-                pageTitle="Rukhsati — Shimla Resort (29 Oct)"
-                defaultFilename="page 2(oct 29).webp"
-                candidateFilenames={[
-                  'page 2(oct 29).webp',
-                  'page 2(oct 29).png',
-                  'function-1-rukhsati.png',
-                  'page2.png',
-                ]}
-                altText="Basit Ali & Ambiya Basher — Rukhsati Invitation Card (29 Oct)"
-                storageKey="suite_card_rukhsati"
-              />
-            </AnimatedSection>
-          )}
-
-          {/* Function 2: Hotel Ramada Reception Card (Friday, 30th October 2026) */}
-          {invitedFunctionIds.includes(2) && (
-            <AnimatedSection direction="up" durationMs={700} delayMs={250}>
-              <InvitationPageCard
-                pageLabel={invitedFunctionIds.includes(1) ? "Wedding Suite · Page 4 (Ramada Reception)" : "Wedding Suite · Page 3 (Ramada Reception)"}
-                pageTitle="Wedding Reception — Hotel Ramada (30 Oct)"
-                defaultFilename="page3( 30 oct).webp"
-                candidateFilenames={[
-                  'page3( 30 oct).webp',
-                  'page3( 30 oct).png',
-                  'function-2-ramada.png',
-                ]}
-                altText="Basit Ali & Ambiya Basher — Hotel Ramada Reception Invitation Card (30 Oct)"
-                storageKey="suite_card_ramada"
-              />
-            </AnimatedSection>
-          )}
-
-          {/* Function 3: Radiant Resorts Reception Card (Monday, 2nd November 2026) */}
-          {invitedFunctionIds.includes(3) && (
-            <AnimatedSection direction="up" durationMs={700} delayMs={300}>
-              <InvitationPageCard
-                pageLabel={`Wedding Suite · Page ${2 + invitedFunctionIds.indexOf(3) + 1} (Radiant Reception)`}
-                pageTitle="Wedding Reception — Radiant Resorts Gorakhpur (2 Nov)"
-                defaultFilename="page 4 (2 Nov).webp"
-                candidateFilenames={[
-                  'page 4 (2 Nov).webp',
-                  'page 4 (2 Nov).png',
-                  'function-3-radiant.png',
-                ]}
-                altText="Basit Ali & Ambiya Basher — Radiant Resorts Reception Invitation Card (2 Nov)"
-                storageKey="suite_card_radiant"
-              />
-            </AnimatedSection>
-          )}
         </section>
 
           {/* Scratch Card & Countdown Section */}
