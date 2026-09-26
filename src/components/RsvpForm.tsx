@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Heart, Loader2, FileSpreadsheet } from 'lucide-react';
+import { Heart, Loader2 } from 'lucide-react';
 import { FlowerDivider } from './Ornaments';
 import { RsvpData } from '../types';
 import { addRsvpEntry } from '../services/rsvpExcelService';
@@ -342,18 +342,6 @@ export const RsvpForm: React.FC = () => {
             'Send RSVP'
           )}
         </button>
-
-        {/* Discreet Host / Organizer trigger for Uploading & Managing Excel sheet */}
-        <div className="mt-6 pt-3 border-t border-gold-soft/30 flex items-center justify-center">
-          <button
-            type="button"
-            onClick={() => window.dispatchEvent(new CustomEvent('open_rsvp_excel_manager'))}
-            className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-cinzel text-foreground/75 hover:text-foreground bg-amber-50/70 hover:bg-amber-100 border border-gold-soft/50 shadow-xs transition-all cursor-pointer"
-          >
-            <FileSpreadsheet className="w-3.5 h-3.5 text-amber-800" />
-            <span>Host / Organizer: Upload or Download Excel Sheet</span>
-          </button>
-        </div>
       </div>
     </form>
   );

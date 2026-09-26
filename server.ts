@@ -158,7 +158,19 @@ function saveRsvps(entries: RsvpEntry[]): void {
 }
 
 // REST API Endpoints
-app.get('/api/rsvp', (_req: Request, res: Response) => {
+app.get('/api/rsvp', (req: Request, res: Response) => {
+  const isAdmin =
+    req.query.admin === 'rsvp' ||
+    req.query.host === 'rsvp' ||
+    req.headers['x-admin-rsvp'] === 'true';
+
+  if (!isAdmin) {
+    return res.status(403).json({
+      success: false,
+      error: 'RSVP guest details are private. Access via ?admin=rsvp',
+    });
+  }
+
   const rsvps = loadRsvps();
   res.json({ success: true, count: rsvps.length, rsvps });
 });
@@ -276,7 +288,16 @@ app.post('/api/rsvp', async (req: Request, res: Response) => {
   }
 });
 
-app.get('/api/rsvp/download', (_req: Request, res: Response) => {
+app.get('/api/rsvp/download', (req: Request, res: Response) => {
+  const isAdmin =
+    req.query.admin === 'rsvp' ||
+    req.query.host === 'rsvp' ||
+    req.headers['x-admin-rsvp'] === 'true';
+
+  if (!isAdmin) {
+    return res.status(403).send('Access restricted: RSVP details require ?admin=rsvp');
+  }
+
   if (fs.existsSync(EXCEL_PUBLIC_PATH)) {
     return res.download(EXCEL_PUBLIC_PATH, 'Basit-Ambiya-Wedding-RSVPs.xlsx');
   } else if (fs.existsSync(EXCEL_ROOT_PATH)) {

@@ -100,12 +100,14 @@ export default function App() {
   const [shouldPlayAudio, setShouldPlayAudio] = useState(false);
   const [dateRevealed, setDateRevealed] = useState(false);
   const [showAdminExcel, setShowAdminExcel] = useState(false);
+  const [isAdminMode, setIsAdminMode] = useState(false);
 
   useEffect(() => {
     // Secret trigger for host only: ?admin=rsvp
     if (typeof window !== 'undefined' && window.location?.search) {
       const p = new URLSearchParams(window.location.search);
       if (p.get('admin') === 'rsvp' || p.get('host') === 'rsvp') {
+        setIsAdminMode(true);
         setShowAdminExcel(true);
       }
     }
@@ -114,11 +116,15 @@ export default function App() {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'E' || e.key === 'e')) {
         e.preventDefault();
+        setIsAdminMode(true);
         setShowAdminExcel((prev) => !prev);
       }
     };
 
-    const handleOpenManager = () => setShowAdminExcel(true);
+    const handleOpenManager = () => {
+      setIsAdminMode(true);
+      setShowAdminExcel(true);
+    };
 
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('open_rsvp_excel_manager', handleOpenManager);
@@ -350,6 +356,19 @@ export default function App() {
           isOpen={showAdminExcel}
           onClose={() => setShowAdminExcel(false)}
         />
+      )}
+
+      {/* Floating Host Quick-Toggle (Visible ONLY in Admin Mode when URL has ?admin=rsvp) */}
+      {isAdminMode && !showAdminExcel && (
+        <button
+          type="button"
+          onClick={() => setShowAdminExcel(true)}
+          className="fixed bottom-5 right-5 z-40 inline-flex items-center gap-2 px-4 py-2.5 rounded-full bg-stone-900/95 hover:bg-stone-900 text-[#f5efe6] text-xs font-cinzel tracking-wider uppercase font-bold shadow-2xl border-2 border-gold-soft cursor-pointer transition-all hover:scale-105"
+          title="Click to open host RSVP registry & Excel manager"
+        >
+          <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+          <span>Host RSVP Panel (?admin=rsvp)</span>
+        </button>
       )}
     </div>
   );

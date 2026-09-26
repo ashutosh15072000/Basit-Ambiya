@@ -610,9 +610,12 @@ export async function importExcelFile(file: File): Promise<{
 
     // Save to backend server if available
     try {
-      await fetch('/api/rsvp/bulk', {
+      await fetch('/api/rsvp/bulk?admin=rsvp', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-rsvp': 'true',
+        },
         body: JSON.stringify({ rsvps: mergedList }),
       }).catch(() => {});
     } catch {}
