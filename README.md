@@ -1,11 +1,106 @@
-<div align="center">
+# Ambiya & Basit Ali — Muslim Wedding Invitation Website 🕊️✨
 
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+A luxury Muslim Wedding Invitation and celebration web application for **Ambiya Basher & Basit Ali** (29th October 2026).
 
-  <h1>Built with AI Studio</h2>
+Built with **React 19**, **Vite**, **TypeScript**, and **Tailwind CSS**.
 
-  <p>The fastest path from prompt to production with Gemini.</p>
+---
 
-  <a href="https://aistudio.google.com/apps">Start building</a>
+## 📊 RSVP Data & Excel Sheet Sync on GitHub
 
-</div>
+The RSVP system automatically generates and maintains the Excel spreadsheet:
+- File location: `wedding-rsvps.xlsx` (and `public/wedding-rsvps.xlsx`)
+- As guests fill out the RSVP form, their response is appended to the Excel workbook in real time.
+- **Privacy First**: The Excel spreadsheet and guest list are completely hidden from the public website visitors.
+- **Direct GitHub Sync**: When configured with a GitHub Personal Access Token (or repo permissions), each new RSVP submission commits the updated Excel spreadsheet directly to your GitHub repository in the background.
+- **Host Access**: The wedding hosts can privately access the Excel management portal by adding `?admin=rsvp` to the URL or by pressing `Ctrl + Shift + E`.
+
+---
+
+## 💌 Public Wishes & Messages Stored on GitHub (`wedding-wishes.json`)
+
+The guestbook & blessings system stores all wishes in a shared JSON file committed to GitHub:
+- File location: `wedding-wishes.json` (and `public/wedding-wishes.json`)
+- **Shared & Visible to Everyone**: When any visitor opens the website, it loads the wishes from `public/wedding-wishes.json` and directly from GitHub (`https://raw.githubusercontent.com/.../wedding-wishes.json`), ensuring all guests see wishes posted by others.
+- **Live Sync**: When anyone writes a wish in the "Send Blessings / Post Wish" modal or submits an RSVP with a prayer/message, the wish is saved into the JSON file and committed to GitHub in real time.
+
+---
+
+## 🚀 Easy Hosting on GitHub Pages (Recommended)
+
+This repository is already pre-configured for seamless GitHub hosting.
+
+### Method 1: Automatic Deployment with GitHub Actions (Zero manual commands)
+
+1. Create a new repository on [GitHub](https://github.com/new).
+2. Push this project to your repository:
+   ```bash
+   git init
+   git add .
+   git commit -m "Initial commit - Wedding Invitation"
+   git branch -M main
+   git remote add origin https://github.com/<YOUR_USERNAME>/<YOUR_REPOSITORY_NAME>.git
+   git push -u origin main
+   ```
+3. In your GitHub repository:
+   - Go to **Settings** → **Pages** (in the left sidebar).
+   - Under **Build and deployment** → **Source**, select **GitHub Actions**.
+4. That's it! GitHub Actions will automatically build and publish your site at:
+   `https://<YOUR_USERNAME>.github.io/<YOUR_REPOSITORY_NAME>/`
+
+---
+
+### Method 2: One-Command Manual Deployment (`npm run deploy`)
+
+If you prefer deploying directly from your local terminal:
+
+1. In `package.json`, you can optionally add your homepage URL:
+   ```json
+   "homepage": "https://<YOUR_USERNAME>.github.io/<YOUR_REPOSITORY_NAME>"
+   ```
+2. Run the deployment command:
+   ```bash
+   npm run deploy
+   ```
+3. In your GitHub repository under **Settings** → **Pages**, ensure the Source is set to deploy from the `gh-pages` branch.
+
+---
+
+## 💻 Local Development
+
+To run the project locally on your machine:
+
+```bash
+# 1. Install dependencies
+npm install
+
+# 2. Start the development server
+npm run dev
+```
+
+Open `http://localhost:3000` in your browser.
+
+---
+
+## 📦 Production Build
+
+To test the production build locally:
+
+```bash
+npm run build
+npm run preview
+```
+
+The compiled static files will be generated in the `dist/` directory.
+
+---
+
+## 🎨 Key Features Included
+- **Islamic Calligraphy & Duas**: Sacred *Bismillahir Rahmanir Raheem*, Surah Ar-Rum ayat, and Sunnah Nikah blessings.
+- **Architectural Mihrab Arch & Gilded Lanterns**: Pure SVG Islamic motifs, fanous lanterns with ambient glowing lights, and geometric lattice patterns.
+- **Interactive Scratch-to-Reveal Card**: Interactive scratch card revealing the wedding date with celebratory confetti.
+- **Dynamic Real-Time Countdown**: Countdown to Thursday, 29th October 2026.
+- **Ceremony Schedule Cards**: Haldi & Manjha, Mehndi & Sangeet, Nikah, and Walima with Google Maps links and calendar shortcuts.
+- **Background Music Player**: Gentle instrumental wedding nasheed with toggle mute/unmute control.
+- **Photo Gallery Carousel**: Smooth touch and drag navigation for cherished moments.
+- **Interactive RSVP Form**: Client-side response form with instant guest confirmation.
