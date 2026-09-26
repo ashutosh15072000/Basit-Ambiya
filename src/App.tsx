@@ -199,47 +199,45 @@ export default function App() {
         {/* Invitation Suite Section - Clean presentation without background distractions */}
   
         <section className="relative w-full pt-4 sm:pt-10 pb-12 sm:pb-16 flex flex-col items-center justify-center px-1 sm:px-4 md:px-6 select-none border-b border-gold-soft/30">
-          {/* Page 1 (Prelude page before main invitation) */}
+          {/* Page 1 (Prelude: #BasitGotAmbitious Floral Swing - Constant for all functions) */}
           <AnimatedSection direction="up" durationMs={700}>
             <InvitationPageCard
               pageLabel="Wedding Suite · Page 1"
-              pageTitle="Sacred Prelude & Blessing"
+              pageTitle="#BasitGotAmbitious — Sacred Prelude & Blessing"
               defaultFilename="Basti&Ambiya11.webp"
               candidateFilenames={[
-        'Basti&Ambiya11.webp',
+                'Basti&Ambiya11.webp',
               ]}
               altText="Basit Ali and Ambiya Basher — Wedding Suite Prelude Page"
               storageKey="suite_page_0"
             />
           </AnimatedSection>
 
-          {/* Main Invitation Page (Shown for general view or when all 3 functions invited) */}
-          {invitedFunctionIds.length === 3 && (
-            <AnimatedSection direction="up" durationMs={700} delayMs={150}>
-              <InvitationPageCard
-                pageLabel="Wedding Suite · Main Invitation"
-                pageTitle="Basit Ali and Ambiya Basher"
-                defaultFilename="page 1.webp"
-                candidateFilenames={[
-                  'page 1.webp',
-                  'page 1.png',
-                  'function-all.png',
-                  'page1.png',
-                  'page 1.jpg',
-                  'page 1.jpeg',
-                ]}
-                altText="Basit Ali and Ambiya Basher — Sacred Wedding Invitation"
-                storageKey="suite_page_1"
-              />
-            </AnimatedSection>
-          )}
+          {/* Page 2 (Main Invitation: With Love, Joy & Gratitude - Constant for all functions) */}
+          <AnimatedSection direction="up" durationMs={700} delayMs={150}>
+            <InvitationPageCard
+              pageLabel="Wedding Suite · Page 2"
+              pageTitle="With Love, Joy & Gratitude — Basit & Ambiya"
+              defaultFilename="page 1.webp"
+              candidateFilenames={[
+                'page 1.webp',
+                'page 1.png',
+                'function-all.png',
+                'page1.png',
+                'page 1.jpg',
+                'page 1.jpeg',
+              ]}
+              altText="Basit Ali and Ambiya Basher — Sacred Wedding Invitation"
+              storageKey="suite_page_1"
+            />
+          </AnimatedSection>
 
           {/* Function 1: Rukhsati Card (Thursday, 29th October 2026 - Shimla Resort) */}
           {invitedFunctionIds.includes(1) && (
-            <AnimatedSection direction="up" durationMs={700} delayMs={invitedFunctionIds.length === 3 ? 200 : 150}>
+            <AnimatedSection direction="up" durationMs={700} delayMs={200}>
               <InvitationPageCard
-                pageLabel="Ceremony Card · Thursday, 29th Oct 2026"
-                pageTitle="Rukhsati — Shimla Resort"
+                pageLabel="Wedding Suite · Page 3 (Rukhsati)"
+                pageTitle="Rukhsati — Shimla Resort (29 Oct)"
                 defaultFilename="page 2(oct 29).webp"
                 candidateFilenames={[
                   'page 2(oct 29).webp',
@@ -255,10 +253,10 @@ export default function App() {
 
           {/* Function 2: Hotel Ramada Reception Card (Friday, 30th October 2026) */}
           {invitedFunctionIds.includes(2) && (
-            <AnimatedSection direction="up" durationMs={700} delayMs={invitedFunctionIds.length === 3 ? 250 : 180}>
+            <AnimatedSection direction="up" durationMs={700} delayMs={250}>
               <InvitationPageCard
-                pageLabel="Ceremony Card · Friday, 30th Oct 2026"
-                pageTitle="Wedding Reception — Hotel Ramada"
+                pageLabel={invitedFunctionIds.includes(1) ? "Wedding Suite · Page 4 (Ramada Reception)" : "Wedding Suite · Page 3 (Ramada Reception)"}
+                pageTitle="Wedding Reception — Hotel Ramada (30 Oct)"
                 defaultFilename="page3( 30 oct).webp"
                 candidateFilenames={[
                   'page3( 30 oct).webp',
@@ -273,10 +271,10 @@ export default function App() {
 
           {/* Function 3: Radiant Resorts Reception Card (Monday, 2nd November 2026) */}
           {invitedFunctionIds.includes(3) && (
-            <AnimatedSection direction="up" durationMs={700} delayMs={invitedFunctionIds.length === 3 ? 300 : 210}>
+            <AnimatedSection direction="up" durationMs={700} delayMs={300}>
               <InvitationPageCard
-                pageLabel="Ceremony Card · Monday, 2nd Nov 2026"
-                pageTitle="Wedding Reception — Radiant Resorts Gorakhpur"
+                pageLabel={`Wedding Suite · Page ${2 + invitedFunctionIds.indexOf(3) + 1} (Radiant Reception)`}
+                pageTitle="Wedding Reception — Radiant Resorts Gorakhpur (2 Nov)"
                 defaultFilename="page 4 (2 Nov).webp"
                 candidateFilenames={[
                   'page 4 (2 Nov).webp',
