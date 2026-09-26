@@ -18,6 +18,26 @@ const STORAGE_KEY_LIKES = 'wedding_wishes_liked';
 // Initial fallback wishes in case network is completely offline
 const INITIAL_FALLBACK_WISHES: WeddingWish[] = [
   {
+    id: 'wish-1790437478785-lpdo',
+    name: 'Ashuuu',
+    relationOrCity: 'Lucknow',
+    message: 'Djddismsbsusuwjj',
+    date: '26 Sept 2026',
+    timestamp: '2026-09-26T15:44:38.762Z',
+    likes: 1,
+    attending: 'yes',
+  },
+  {
+    id: 'wish-1790434753458-8a6j',
+    name: 'Ayesha Khan',
+    relationOrCity: 'Hyderabad',
+    message: 'Sending heartfelt prayers for a joyous married life! May Allah bless both of you abundantly.',
+    date: 'Sep 26, 2026',
+    timestamp: '2026-09-26T14:59:13.465Z',
+    likes: 1,
+    attending: 'yes',
+  },
+  {
     id: 'wish-init-1',
     name: 'Tariq Ahmad',
     relationOrCity: 'Family & Well-wisher',
@@ -61,21 +81,75 @@ function toBase64Utf8(str: string): string {
 }
 
 /**
- * Get locally stored wishes
+ * Extracts any messages sent through RSVP submissions and converts them into wedding wishes
+ * so they are immediately visible in the message display section.
+ */
+export function extractWishesFromRsvps(): WeddingWish[] {
+  try {
+    const rawRsvps = localStorage.getItem('wedding_rsvps');
+    if (!rawRsvps) return [];
+    const rsvps = JSON.parse(rawRsvps);
+    if (!Array.isArray(rsvps)) return [];
+
+    return rsvps
+      .filter((r) => r.message && String(r.message).trim().length > 0)
+      .map((r, idx) => {
+        const id = `wish-rsvp-${(r.guest_name || 'guest').toLowerCase().replace(/[^a-z0-9]/g, '-')}-${r.submitted_at || idx}`;
+        const dateStr = r.submitted_at
+          ? new Date(r.submitted_at).toLocaleDateString(undefined, {
+              month: 'short',
+              day: 'numeric',
+              year: 'numeric',
+            })
+          : 'Recent RSVP';
+
+        return {
+          id,
+          name: String(r.guest_name).trim(),
+          relationOrCity: r.events && r.events.length > 0 ? 'Attending Guest' : 'Wedding Guest',
+          message: String(r.message).trim(),
+          date: dateStr,
+          timestamp: r.submitted_at || new Date().toISOString(),
+          likes: 1,
+          attending: r.attending || 'yes',
+        };
+      });
+  } catch (err) {
+    console.error('Error extracting wishes from stored RSVPs:', err);
+    return [];
+  }
+}
+
+/**
+ * Get locally stored wishes merged with any messages sent through RSVP forms
  */
 export function getStoredWishes(): WeddingWish[] {
+  const wishesMap = new Map<string, WeddingWish>();
+
+  // 1. Initial fallbacks
+  INITIAL_FALLBACK_WISHES.forEach((w) => wishesMap.set(w.id, w));
+
+  // 2. Direct wishes in localStorage
   try {
     const raw = localStorage.getItem(STORAGE_KEY_WISHES);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed;
+      if (Array.isArray(parsed)) {
+        parsed.forEach((w) => wishesMap.set(w.id, w));
       }
     }
   } catch (err) {
     console.error('Error reading wishes from localStorage:', err);
   }
-  return INITIAL_FALLBACK_WISHES;
+
+  // 3. Messages sent through RSVP forms
+  extractWishesFromRsvps().forEach((w) => wishesMap.set(w.id, w));
+
+  return Array.from(wishesMap.values()).sort((a, b) => {
+    const timeA = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+    const timeB = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+    return timeB - timeA;
+  });
 }
 
 /**
@@ -164,6 +238,9 @@ export async function fetchAllPublicWishes(): Promise<WeddingWish[]> {
 
   // Add locally posted wishes (to not lose user's immediate post)
   localWishes.forEach((w) => combinedMap.set(w.id, w));
+
+  // Add messages from all submitted RSVPs
+  extractWishesFromRsvps().forEach((w) => combinedMap.set(w.id, w));
 
   const merged = Array.from(combinedMap.values()).sort((a, b) => {
     const timeA = a.timestamp ? new Date(a.timestamp).getTime() : 0;

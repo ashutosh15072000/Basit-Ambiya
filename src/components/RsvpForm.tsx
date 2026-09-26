@@ -26,6 +26,7 @@ const RSVP_EVENTS = [
 export const RsvpForm: React.FC = () => {
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [submittedHasMessage, setSubmittedHasMessage] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [form, setForm] = useState<RsvpData>({
@@ -56,6 +57,7 @@ export const RsvpForm: React.FC = () => {
 
     setSubmitting(true);
     setError(null);
+    const hasMsg = !!(form.message && form.message.trim().length > 0);
 
     try {
       // Silently saves and appends to the Excel spreadsheet (wedding-rsvps.xlsx)
@@ -71,7 +73,7 @@ export const RsvpForm: React.FC = () => {
       });
 
       // If the guest provided a heartfelt blessing or message, also save it to the public wishes JSON
-      if (form.message && form.message.trim().length > 0) {
+      if (hasMsg && form.message) {
         try {
           await addWeddingWish({
             name: form.guest_name.trim(),
@@ -85,6 +87,7 @@ export const RsvpForm: React.FC = () => {
       }
 
       setSubmitting(false);
+      setSubmittedHasMessage(hasMsg);
       setSubmitted(true);
     } catch (err: any) {
       console.error('RSVP submission error:', err);
@@ -102,11 +105,31 @@ export const RsvpForm: React.FC = () => {
         <p className="font-serif-display italic text-foreground/80 text-base leading-relaxed">
           Your response has been received. We look forward to celebrating with you!
         </p>
+        {submittedHasMessage && (
+          <div className="p-4 rounded-xl bg-amber-50/90 border border-gold-soft/80 text-sm space-y-2.5 my-2">
+            <p className="font-serif-display italic text-[#1b4332] font-semibold">
+              ✨ Your blessing &amp; Duas have also been published to the Guest Wishes section below!
+            </p>
+            <div>
+              <button
+                type="button"
+                onClick={() => {
+                  const el = document.getElementById('guest-wishes');
+                  el?.scrollIntoView({ behavior: 'smooth' });
+                }}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-gradient-to-r from-[#93203c] via-[#a84c32] to-[#c89b3c] text-white font-cinzel text-xs uppercase font-bold tracking-wider hover:brightness-110 shadow-sm transition-all cursor-pointer"
+              >
+                <span>View My Message in Guest Wishes ↓</span>
+              </button>
+            </div>
+          </div>
+        )}
         <div className="pt-2">
           <button
             type="button"
             onClick={() => {
               setSubmitted(false);
+              setSubmittedHasMessage(false);
               setForm({
                 guest_name: '',
                 phone: '',

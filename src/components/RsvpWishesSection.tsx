@@ -78,13 +78,20 @@ export const RsvpWishesSection: React.FC = () => {
       setCurrentIndex(0);
     };
 
+    const handleRsvpSubmitted = async () => {
+      await loadAllWishes();
+      setCurrentIndex(0);
+    };
+
     window.addEventListener('wedding_wishes_updated', handleWishesUpdated);
-    window.addEventListener('wedding_rsvp_submitted', loadAllWishes);
+    window.addEventListener('wedding_rsvp_submitted', handleRsvpSubmitted);
+    window.addEventListener('wedding_rsvp_updated', handleRsvpSubmitted);
     window.addEventListener('storage', loadAllWishes);
 
     return () => {
       window.removeEventListener('wedding_wishes_updated', handleWishesUpdated);
-      window.removeEventListener('wedding_rsvp_submitted', loadAllWishes);
+      window.removeEventListener('wedding_rsvp_submitted', handleRsvpSubmitted);
+      window.removeEventListener('wedding_rsvp_updated', handleRsvpSubmitted);
       window.removeEventListener('storage', loadAllWishes);
     };
   }, [loadAllWishes]);

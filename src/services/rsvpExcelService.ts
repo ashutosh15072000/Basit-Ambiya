@@ -367,6 +367,24 @@ export async function addRsvpEntry(entry: Omit<RsvpRecord, 'id' | 'submitted_at'
   const updated = [...current, newRecord];
   saveAllRsvps(updated);
 
+  // If the RSVP contains a message or Dua, save it directly to the wishes registry & sync to GitHub
+  if (entry.message && entry.message.trim().length > 0) {
+    try {
+      await addWeddingWish({
+        name: entry.guest_name,
+        relationOrCity: entry.events && entry.events.length > 0 ? 'Attending Guest' : 'Wedding Guest',
+        message: entry.message.trim(),
+        attending: entry.attending,
+      });
+    } catch (wishErr) {
+      console.warn('Could not post wish inside addRsvpEntry:', wishErr);
+    }
+  }
+
+  // Notify components that an RSVP has been submitted
+  window.dispatchEvent(new CustomEvent('wedding_rsvp_submitted', { detail: newRecord }));
+  window.dispatchEvent(new CustomEvent('wedding_wishes_updated'));
+
   // Attempt backend save if server is running
   try {
     await fetch('/api/rsvp', {
