@@ -748,7 +748,7 @@ function injectDynamicOpenGraphTags(html: string, req: Request): string {
     const functionIds = parseInvitedFunctionIds(req.originalUrl);
     const cardInfo = getFunctionCardImage(functionIds);
 
-    const fullImageUrl = `${proto}://${host}${cardInfo.path}`;
+    const fullImageUrl = `${proto}://${host}${cardInfo.path.startsWith('/') ? cardInfo.path : '/' + cardInfo.path}`;
     const fullPageUrl = `${proto}://${host}${req.originalUrl}`;
 
     let title = 'Basit Ali and Ambiya Basher — Wedding Invitation';

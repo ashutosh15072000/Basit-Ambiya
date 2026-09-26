@@ -213,24 +213,81 @@ export default function App() {
             />
           </AnimatedSection>
 
-          {/* Page 2 (Main Invitation - page 1.webp / page 1.png) - Fast WebP with fallback */}
-          <AnimatedSection direction="up" durationMs={700} delayMs={150}>
-            <InvitationPageCard
-              pageLabel="Wedding Suite · Page 2 (Main Invitation)"
-              pageTitle="Basit Ali and Ambiya Basher"
-              defaultFilename="page 1.webp"
-              candidateFilenames={[
-                'page 1.webp',
-                'page 1.png',
-                'page 1(oct 29).png',
-                'page1.png',
-                'page 1.jpg',
-                'page 1.jpeg',
-              ]}
-              altText="Basit Ali and Ambiya Basher — Sacred Wedding Invitation"
-              storageKey="suite_page_1"
-            />
-          </AnimatedSection>
+          {/* Main Invitation Page (Shown for general view or when all 3 functions invited) */}
+          {invitedFunctionIds.length === 3 && (
+            <AnimatedSection direction="up" durationMs={700} delayMs={150}>
+              <InvitationPageCard
+                pageLabel="Wedding Suite · Main Invitation"
+                pageTitle="Basit Ali and Ambiya Basher"
+                defaultFilename="page 1.webp"
+                candidateFilenames={[
+                  'page 1.webp',
+                  'page 1.png',
+                  'function-all.png',
+                  'page1.png',
+                  'page 1.jpg',
+                  'page 1.jpeg',
+                ]}
+                altText="Basit Ali and Ambiya Basher — Sacred Wedding Invitation"
+                storageKey="suite_page_1"
+              />
+            </AnimatedSection>
+          )}
+
+          {/* Function 1: Rukhsati Card (Thursday, 29th October 2026 - Shimla Resort) */}
+          {invitedFunctionIds.includes(1) && (
+            <AnimatedSection direction="up" durationMs={700} delayMs={invitedFunctionIds.length === 3 ? 200 : 150}>
+              <InvitationPageCard
+                pageLabel="Ceremony Card · Thursday, 29th Oct 2026"
+                pageTitle="Rukhsati — Shimla Resort"
+                defaultFilename="page 2(oct 29).webp"
+                candidateFilenames={[
+                  'page 2(oct 29).webp',
+                  'page 2(oct 29).png',
+                  'function-1-rukhsati.png',
+                  'page2.png',
+                ]}
+                altText="Basit Ali & Ambiya Basher — Rukhsati Invitation Card (29 Oct)"
+                storageKey="suite_card_rukhsati"
+              />
+            </AnimatedSection>
+          )}
+
+          {/* Function 2: Hotel Ramada Reception Card (Friday, 30th October 2026) */}
+          {invitedFunctionIds.includes(2) && (
+            <AnimatedSection direction="up" durationMs={700} delayMs={invitedFunctionIds.length === 3 ? 250 : 180}>
+              <InvitationPageCard
+                pageLabel="Ceremony Card · Friday, 30th Oct 2026"
+                pageTitle="Wedding Reception — Hotel Ramada"
+                defaultFilename="page3( 30 oct).webp"
+                candidateFilenames={[
+                  'page3( 30 oct).webp',
+                  'page3( 30 oct).png',
+                  'function-2-ramada.png',
+                ]}
+                altText="Basit Ali & Ambiya Basher — Hotel Ramada Reception Invitation Card (30 Oct)"
+                storageKey="suite_card_ramada"
+              />
+            </AnimatedSection>
+          )}
+
+          {/* Function 3: Radiant Resorts Reception Card (Monday, 2nd November 2026) */}
+          {invitedFunctionIds.includes(3) && (
+            <AnimatedSection direction="up" durationMs={700} delayMs={invitedFunctionIds.length === 3 ? 300 : 210}>
+              <InvitationPageCard
+                pageLabel="Ceremony Card · Monday, 2nd Nov 2026"
+                pageTitle="Wedding Reception — Radiant Resorts Gorakhpur"
+                defaultFilename="page 4 (2 Nov).webp"
+                candidateFilenames={[
+                  'page 4 (2 Nov).webp',
+                  'page 4 (2 Nov).png',
+                  'function-3-radiant.png',
+                ]}
+                altText="Basit Ali & Ambiya Basher — Radiant Resorts Reception Invitation Card (2 Nov)"
+                storageKey="suite_card_radiant"
+              />
+            </AnimatedSection>
+          )}
         </section>
 
           {/* Scratch Card & Countdown Section */}

@@ -15,6 +15,7 @@ export interface WeddingFunction {
   timestamp: number;
   cardImagePath: string;
   cardImageFilename: string;
+  candidateFilenames: string[];
 }
 
 export const ALL_FUNCTIONS: WeddingFunction[] = [
@@ -33,8 +34,14 @@ export const ALL_FUNCTIONS: WeddingFunction[] = [
     rsvpId: 'Rukhsati',
     directionsUrl: 'https://maps.app.goo.gl/oNb7LC2ZuKpFT9b7A?g_st=ac',
     timestamp: new Date('2026-10-29T19:30:00').getTime(),
-    cardImagePath: '/assets/function-1-rukhsati.png',
+    cardImagePath: 'assets/function-1-rukhsati.png',
     cardImageFilename: 'page 2(oct 29).png',
+    candidateFilenames: [
+      'page 2(oct 29).webp',
+      'page 2(oct 29).png',
+      'function-1-rukhsati.png',
+      'page2.png',
+    ],
   },
   {
     id: 2,
@@ -51,8 +58,13 @@ export const ALL_FUNCTIONS: WeddingFunction[] = [
     rsvpId: 'Wedding Reception - Hotel Ramada',
     directionsUrl: 'https://maps.app.goo.gl/VC1HVfJNPzLf7CNy9',
     timestamp: new Date('2026-10-30T19:30:00').getTime(),
-    cardImagePath: '/assets/function-2-ramada.png',
+    cardImagePath: 'assets/function-2-ramada.png',
     cardImageFilename: 'page3( 30 oct).png',
+    candidateFilenames: [
+      'page3( 30 oct).webp',
+      'page3( 30 oct).png',
+      'function-2-ramada.png',
+    ],
   },
   {
     id: 3,
@@ -69,8 +81,13 @@ export const ALL_FUNCTIONS: WeddingFunction[] = [
     rsvpId: 'Wedding Reception - Radiant Resorts',
     directionsUrl: 'https://maps.app.goo.gl/YeqWGNYWq3HWQegm9',
     timestamp: new Date('2026-11-02T19:30:00').getTime(),
-    cardImagePath: '/assets/function-3-radiant.png',
+    cardImagePath: 'assets/function-3-radiant.png',
     cardImageFilename: 'page 4 (2 Nov).png',
+    candidateFilenames: [
+      'page 4 (2 Nov).webp',
+      'page 4 (2 Nov).png',
+      'function-3-radiant.png',
+    ],
   },
 ];
 
@@ -81,6 +98,7 @@ export function getFunctionCardImage(functionIds: number[]): {
   path: string;
   filename: string;
   title: string;
+  candidateFilenames: string[];
 } {
   if (functionIds.length === 1) {
     const f = ALL_FUNCTIONS.find((item) => item.id === functionIds[0]);
@@ -89,6 +107,7 @@ export function getFunctionCardImage(functionIds: number[]): {
         path: f.cardImagePath,
         filename: f.cardImageFilename,
         title: f.title,
+        candidateFilenames: f.candidateFilenames,
       };
     }
   }
@@ -96,23 +115,26 @@ export function getFunctionCardImage(functionIds: number[]): {
   if (functionIds.length === 2) {
     if (functionIds.includes(1)) {
       return {
-        path: '/assets/function-1-rukhsati.png',
+        path: 'assets/function-1-rukhsati.png',
         filename: 'page 2(oct 29).png',
         title: 'Rukhsati & Reception',
+        candidateFilenames: ['page 2(oct 29).webp', 'page 2(oct 29).png', 'function-1-rukhsati.png'],
       };
     }
     return {
-      path: '/assets/function-2-ramada.png',
+      path: 'assets/function-2-ramada.png',
       filename: 'page3( 30 oct).png',
       title: 'Wedding Receptions',
+      candidateFilenames: ['page3( 30 oct).webp', 'page3( 30 oct).png', 'function-2-ramada.png'],
     };
   }
 
   // All 3 or general
   return {
-    path: '/assets/function-all.png',
+    path: 'assets/function-all.png',
     filename: 'page 1.png',
     title: 'Sacred Wedding Invitation',
+    candidateFilenames: ['page 1.webp', 'page 1.png', 'function-all.png'],
   };
 }
 
@@ -472,7 +494,8 @@ export function buildInviteUrl(
 export function buildWhatsAppMessage(
   guestName: string,
   functionIds: number[],
-  inviteUrl: string
+  inviteUrl: string,
+  imageUrl?: string
 ): string {
   const greeting = guestName.trim()
     ? `Dear ${guestName.trim()},`
@@ -487,6 +510,10 @@ export function buildWhatsAppMessage(
     .filter(Boolean)
     .join('\n\n');
 
+  const imageSection = imageUrl
+    ? `\n\n🖼️ *Ceremony Invitation Card Image:*\n${imageUrl}`
+    : '';
+
   return (
     `بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ\n\n` +
     `*Wedding Invitation*\n\n` +
@@ -496,7 +523,8 @@ export function buildWhatsAppMessage(
     `We humbly request the honor of your gracious presence & Duas for:\n\n` +
     `${functionsList}\n\n` +
     `💌 *Please view your personal invitation & RSVP here:*\n` +
-    `${inviteUrl}\n\n` +
+    `${inviteUrl}` +
+    `${imageSection}\n\n` +
     `Awaiting your noble presence, love, and prayers! 🌸`
   );
 }

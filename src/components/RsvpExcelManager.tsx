@@ -49,6 +49,7 @@ import {
   getInvitedFunctionsDescription,
   getFunctionCardImage,
 } from '../utils/invitationConfig';
+import { getAssetPath } from '../utils/assets';
 
 export interface SavedGuestInvite {
   id: string;
@@ -122,13 +123,25 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
   };
 
   const handleWhatsAppShare = async (name: string, functionIds: number[], url: string) => {
-    const text = buildWhatsAppMessage(name, functionIds, url);
     const cardInfo = getFunctionCardImage(functionIds);
+    const assetUrl = getAssetPath(cardInfo.path);
 
-    // Try native Web Share API with image file attached!
+    // Compute absolute image URL for the WhatsApp message text
+    let fullImageUrl = assetUrl;
+    if (typeof window !== 'undefined') {
+      try {
+        fullImageUrl = new URL(assetUrl, window.location.href).href;
+      } catch {
+        fullImageUrl = assetUrl;
+      }
+    }
+
+    const text = buildWhatsAppMessage(name, functionIds, url, fullImageUrl);
+
+    // 1. Try native Web Share API with image file attached (Android/iOS, Safari, supporting desktop)
     if (typeof navigator !== 'undefined' && navigator.share) {
       try {
-        const response = await fetch(cardInfo.path);
+        const response = await fetch(assetUrl);
         if (response.ok) {
           const blob = await response.blob();
           const file = new File([blob], cardInfo.filename, { type: 'image/png' });
@@ -147,23 +160,59 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
       }
     }
 
-    // Direct WhatsApp link fallback (which also unfurls the dynamic OG card image)
+    // 2. Try copying ceremony card image directly to clipboard for instant Ctrl+V into WhatsApp Web
+    try {
+      const response = await fetch(assetUrl);
+      if (response.ok) {
+        const blob = await response.blob();
+        await navigator.clipboard.write([
+          new ClipboardItem({ 'image/png': blob }),
+        ]);
+        setSyncFeedback({
+          type: 'success',
+          message: `Ceremony card photo copied! Press Ctrl+V (or Paste) in WhatsApp to attach the photo.`,
+        });
+      }
+    } catch {
+      // clipboard image writing not supported everywhere, continue
+    }
+
+    // 3. Open WhatsApp link with pre-filled invitation text & direct image link
     const whatsappUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
     window.open(whatsappUrl, '_blank');
   };
 
-  const handleDownloadCardImage = (functionIds: number[]) => {
+  const handleDownloadCardImage = async (functionIds: number[]) => {
     const cardInfo = getFunctionCardImage(functionIds);
-    const link = document.createElement('a');
-    link.href = cardInfo.path;
-    link.download = cardInfo.filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    setSyncFeedback({
-      type: 'success',
-      message: `Card image for ${cardInfo.title} (${cardInfo.filename}) downloaded! You can attach it directly into your WhatsApp chat.`,
-    });
+    const assetUrl = getAssetPath(cardInfo.path);
+
+    try {
+      const response = await fetch(assetUrl);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = cardInfo.filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 2000);
+
+      setSyncFeedback({
+        type: 'success',
+        message: `Card image "${cardInfo.filename}" downloaded! You can attach it directly into your WhatsApp chat.`,
+      });
+    } catch (err) {
+      console.warn('Blob download error, falling back to direct open:', err);
+      const link = document.createElement('a');
+      link.href = assetUrl;
+      link.download = cardInfo.filename;
+      link.target = '_blank';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
   };
 
   const handleSaveInvite = () => {
@@ -1264,9 +1313,12 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
                         <div className="flex items-center gap-3.5 w-full sm:w-auto">
                           <div className="relative w-14 h-18 sm:w-16 sm:h-20 shrink-0 rounded-lg overflow-hidden border border-emerald-400 shadow-sm bg-white">
                             <img
-                              src={cardInfo.path}
+                              src={getAssetPath(cardInfo.path)}
                               alt={cardInfo.title}
                               className="w-full h-full object-cover"
+                              onError={(e) => {
+                                (e.currentTarget as HTMLImageElement).src = getAssetPath(`assets/${cardInfo.filename}`);
+                              }}
                             />
                             <div className="absolute inset-0 bg-black/5" />
                           </div>
