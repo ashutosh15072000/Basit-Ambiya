@@ -125,18 +125,7 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
   const handleWhatsAppShare = async (name: string, functionIds: number[], url: string) => {
     const cardInfo = getFunctionCardImage(functionIds);
     const assetUrl = getAssetPath(cardInfo.path);
-
-    // Compute absolute image URL for the WhatsApp message text
-    let fullImageUrl = assetUrl;
-    if (typeof window !== 'undefined') {
-      try {
-        fullImageUrl = new URL(assetUrl, window.location.href).href;
-      } catch {
-        fullImageUrl = assetUrl;
-      }
-    }
-
-    const text = buildWhatsAppMessage(name, functionIds, url, fullImageUrl);
+    const text = buildWhatsAppMessage(name, functionIds, url);
 
     // 1. Try native Web Share API with image file attached (Android/iOS, Safari, supporting desktop)
     if (typeof navigator !== 'undefined' && navigator.share) {

@@ -494,8 +494,7 @@ export function buildInviteUrl(
 export function buildWhatsAppMessage(
   guestName: string,
   functionIds: number[],
-  inviteUrl: string,
-  imageUrl?: string
+  inviteUrl: string
 ): string {
   const greeting = guestName.trim()
     ? `Dear ${guestName.trim()},`
@@ -510,10 +509,6 @@ export function buildWhatsAppMessage(
     .filter(Boolean)
     .join('\n\n');
 
-  const imageSection = imageUrl
-    ? `\n\n🖼️ *Ceremony Invitation Card Image:*\n${imageUrl}`
-    : '';
-
   return (
     `بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ\n\n` +
     `*Wedding Invitation*\n\n` +
@@ -523,8 +518,7 @@ export function buildWhatsAppMessage(
     `We humbly request the honor of your gracious presence & Duas for:\n\n` +
     `${functionsList}\n\n` +
     `💌 *Please view your personal invitation & RSVP here:*\n` +
-    `${inviteUrl}` +
-    `${imageSection}\n\n` +
+    `${inviteUrl}\n\n` +
     `Awaiting your noble presence, love, and prayers! 🌸`
   );
 }
