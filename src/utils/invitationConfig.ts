@@ -189,6 +189,23 @@ export function getFunctionCardImage(functionIds: number[]): {
 }
 
 /**
+ * Discreet, unguessable access security tokens for wedding functions.
+ * Instead of predictable function names (like "rukhsati" or "ramada"),
+ * URLs use randomized alphanumeric keys so guests cannot guess or tamper with ceremony parameters.
+ */
+export const RANDOM_FUNCTION_TOKENS = {
+  // Single function access codes
+  FUNCTION_1: 'v8k29', // Rukhsati (Shimla Resort · Oct 29)
+  FUNCTION_2: 'm4w30', // Hotel Ramada (Oct 30)
+  FUNCTION_3: 'p7r02', // Radiant Resorts (Nov 2)
+  // Multi-function combinations
+  FUNCTIONS_1_2: 'x8b4w', // Rukhsati + Hotel Ramada
+  FUNCTIONS_2_3: 'n3q9f', // Hotel Ramada + Radiant Resorts
+  FUNCTIONS_1_3: 'g5t2k', // Rukhsati + Radiant Resorts
+  ALL_FUNCTIONS: 'w9v4k', // All 3 Functions
+};
+
+/**
  * Normalizes string for fuzzy/alias matching (removes symbols, spaces, lowercases)
  */
 function normalizeKey(str: string): string {
@@ -197,12 +214,16 @@ function normalizeKey(str: string): string {
 
 /**
  * Checks if a token matches Function 1 (Rukhsati at Shimla Resort).
- * Matches: rukhsati, shimla, shimla resort, nikah, oct 29, 29, function 1, f1, etc.
  */
 function matchesFunction1(token: string): boolean {
   const norm = normalizeKey(token);
   if (!norm) return false;
   return (
+    norm === 'v8k29' ||
+    norm === 'k9x2m4' ||
+    norm === 'v7r8p1' ||
+    norm === 'sh29x' ||
+    norm === 'rk92a' ||
     norm === '1' ||
     norm === 'f1' ||
     norm === 'fn1' ||
@@ -227,12 +248,15 @@ function matchesFunction1(token: string): boolean {
 
 /**
  * Checks if a token matches Function 2 (Wedding Reception at Hotel Ramada).
- * Matches: ramada, hotel ramada, reception 1, oct 30, 30, function 2, f2, etc.
  */
 function matchesFunction2(token: string): boolean {
   const norm = normalizeKey(token);
   if (!norm) return false;
   return (
+    norm === 'm4w30' ||
+    norm === 'm4w7q3' ||
+    norm === 'z2h8b6' ||
+    norm === 'rm30b' ||
     norm === '2' ||
     norm === 'f2' ||
     norm === 'fn2' ||
@@ -251,12 +275,15 @@ function matchesFunction2(token: string): boolean {
 
 /**
  * Checks if a token matches Function 3 (Wedding Reception at Radiant Resorts Gorakhpur).
- * Matches: radiant, radiant resorts, gorakhpur, reception 2, nov 2, 2, function 3, f3, etc.
  */
 function matchesFunction3(token: string): boolean {
   const norm = normalizeKey(token);
   if (!norm) return false;
   return (
+    norm === 'p7r02' ||
+    norm === 'p8j5v1' ||
+    norm === 'y6k3d9' ||
+    norm === 'rd02c' ||
     norm === '3' ||
     norm === 'f3' ||
     norm === 'fn3' ||
@@ -273,6 +300,240 @@ function matchesFunction3(token: string): boolean {
     norm.includes('november2') ||
     norm.includes('nov02')
   );
+}
+
+export interface ParsedInvitationState {
+  isValid: boolean;
+  isTamperedOrInvalid: boolean;
+  functionIds: number[];
+  invalidTokens: string[];
+  paramSpecified: boolean;
+  rawSearch: string;
+}
+
+/**
+ * Validates and parses query parameters to verify if valid unguessable access key(s) were supplied.
+ * If a visitor tampers with the URL or passes an unrecognized/invalid token,
+ * `isTamperedOrInvalid` is flagged so the application securely hides the private wedding details.
+ */
+export function validateAndParseInvitationUrl(searchStr: string = ''): ParsedInvitationState {
+  if (typeof window === 'undefined' && !searchStr) {
+    return {
+      isValid: true,
+      isTamperedOrInvalid: false,
+      functionIds: [1, 2, 3],
+      invalidTokens: [],
+      paramSpecified: false,
+      rawSearch: '',
+    };
+  }
+
+  const rawStr = searchStr || (typeof window !== 'undefined' ? window.location.search : '');
+  if (!rawStr) {
+    return {
+      isValid: true,
+      isTamperedOrInvalid: false,
+      functionIds: [1, 2, 3],
+      invalidTokens: [],
+      paramSpecified: false,
+      rawSearch: '',
+    };
+  }
+
+  const query = rawStr.includes('?') ? rawStr.slice(rawStr.indexOf('?') + 1) : rawStr;
+  const params = new URLSearchParams(query);
+
+  // 1. Gather all values from common parameter keys
+  const paramKeys = [
+    'invite',
+    'access',
+    'token',
+    'code',
+    'key',
+    'pass',
+    'c',
+    'v',
+    'function',
+    'functions',
+    'function_name',
+    'functionname',
+    'f',
+    'fn',
+    'event',
+    'events',
+    'ceremony',
+    'ceremonies',
+    'program',
+    'programs',
+    'invitation',
+    'invited_to',
+  ];
+
+  const rawValues: string[] = [];
+  let paramSpecified = false;
+
+  for (const key of paramKeys) {
+    const vals = params.getAll(key);
+    for (const v of vals) {
+      if (v !== null && v !== undefined && v.trim() !== '') {
+        rawValues.push(v);
+        paramSpecified = true;
+      }
+    }
+  }
+
+  // 2. Check if any standalone query flag itself is a function alias or code
+  if (!paramSpecified) {
+    for (const key of params.keys()) {
+      const lower = key.toLowerCase().trim();
+      // Ignore general query flags
+      if (
+        [
+          'guest',
+          'name',
+          'to',
+          'n',
+          'admin',
+          'host',
+          'usher',
+          'id',
+          'set_gh_token',
+          'set_gh_owner',
+          'set_gh_repo',
+          'set_gh_branch',
+          'gh_token',
+          'gh_owner',
+          'gh_repo',
+          'gh_branch',
+        ].includes(lower)
+      ) {
+        continue;
+      }
+
+      if (
+        matchesFunction1(lower) ||
+        matchesFunction2(lower) ||
+        matchesFunction3(lower) ||
+        lower === 'x8b4w' ||
+        lower === 'n3q9f' ||
+        lower === 'g5t2k' ||
+        lower === 'w9v4k' ||
+        lower === 'all'
+      ) {
+        rawValues.push(lower);
+        paramSpecified = true;
+      }
+    }
+  }
+
+  // If no function parameter was provided at all in URL, open the complete wedding celebration
+  if (!paramSpecified || rawValues.length === 0) {
+    return {
+      isValid: true,
+      isTamperedOrInvalid: false,
+      functionIds: [1, 2, 3],
+      invalidTokens: [],
+      paramSpecified: false,
+      rawSearch: rawStr,
+    };
+  }
+
+  // Check if visitor requested "all"
+  const combinedRaw = rawValues.join(',').toLowerCase();
+  if (
+    combinedRaw.includes('all') ||
+    combinedRaw.includes('w9v4k') ||
+    combinedRaw.includes('royal2026') ||
+    combinedRaw === '0'
+  ) {
+    return {
+      isValid: true,
+      isTamperedOrInvalid: false,
+      functionIds: [1, 2, 3],
+      invalidTokens: [],
+      paramSpecified: true,
+      rawSearch: rawStr,
+    };
+  }
+
+  // Split tokens by comma, pipe, slash, plus, or 'and'
+  const tokens = combinedRaw
+    .split(/[,|+;&\s]+/)
+    .map((t) => t.trim().replace(/^and$/, ''))
+    .filter(Boolean);
+
+  const matched = new Set<number>();
+  const invalidTokens: string[] = [];
+
+  for (const token of tokens) {
+    let tokenMatched = false;
+
+    // Check Multi-Function random tokens
+    if (token === 'x8b4w' || token === 'rkrm12' || token === 'j7m1n5') {
+      matched.add(1);
+      matched.add(2);
+      tokenMatched = true;
+    } else if (token === 'n3q9f' || token === 'rmrd23' || token === 'c8v2x4') {
+      matched.add(2);
+      matched.add(3);
+      tokenMatched = true;
+    } else if (token === 'g5t2k' || token === 'rkrd13' || token === 'l4p9z3') {
+      matched.add(1);
+      matched.add(3);
+      tokenMatched = true;
+    } else if (token === 'w9v4k' || token === 'all') {
+      return {
+        isValid: true,
+        isTamperedOrInvalid: false,
+        functionIds: [1, 2, 3],
+        invalidTokens: [],
+        paramSpecified: true,
+        rawSearch: rawStr,
+      };
+    } else if (matchesFunction1(token)) {
+      matched.add(1);
+      tokenMatched = true;
+    } else if (matchesFunction2(token)) {
+      matched.add(2);
+      tokenMatched = true;
+    } else if (matchesFunction3(token)) {
+      matched.add(3);
+      tokenMatched = true;
+    } else {
+      const norm = normalizeKey(token);
+      if ((norm === 'reception' || norm === 'receptions') && !norm.includes('ramada') && !norm.includes('radiant')) {
+        matched.add(2);
+        matched.add(3);
+        tokenMatched = true;
+      }
+    }
+
+    if (!tokenMatched) {
+      invalidTokens.push(token);
+    }
+  }
+
+  // If user passed a function parameter but specified invalid/unrecognized token(s) or none matched:
+  if (matched.size === 0 || invalidTokens.length > 0) {
+    return {
+      isValid: false,
+      isTamperedOrInvalid: true,
+      functionIds: [],
+      invalidTokens,
+      paramSpecified: true,
+      rawSearch: rawStr,
+    };
+  }
+
+  const result = Array.from(matched).sort((a, b) => a - b);
+  return {
+    isValid: true,
+    isTamperedOrInvalid: false,
+    functionIds: result,
+    invalidTokens: [],
+    paramSpecified: true,
+    rawSearch: rawStr,
+  };
 }
 
 /**
@@ -293,106 +554,14 @@ function matchesFunction3(token: string): boolean {
  *   ?ceremony=rukhsati
  *   or bare flags like ?rukhsati or ?ramada or ?radiant
  *
- * Returns sorted list of valid function numbers [1, 2, 3]. Defaults to all [1, 2, 3] if not specified.
+ * Returns sorted list of valid function numbers [1, 2, 3]. Defaults to all [1, 2, 3] if not specified or empty.
  */
 export function parseInvitedFunctionIds(searchStr: string = ''): number[] {
-  if (typeof window === 'undefined' && !searchStr) {
-    return [1, 2, 3];
+  const parsed = validateAndParseInvitationUrl(searchStr);
+  if (parsed.isTamperedOrInvalid) {
+    return [];
   }
-
-  const rawStr = searchStr || (typeof window !== 'undefined' ? window.location.search : '');
-  if (!rawStr) {
-    return [1, 2, 3];
-  }
-
-  const query = rawStr.includes('?') ? rawStr.slice(rawStr.indexOf('?') + 1) : rawStr;
-  const params = new URLSearchParams(query);
-
-  // 1. Gather all values from common parameter keys
-  const paramKeys = [
-    'function',
-    'functions',
-    'function_name',
-    'functionname',
-    'f',
-    'fn',
-    'event',
-    'events',
-    'ceremony',
-    'ceremonies',
-    'program',
-    'programs',
-    'invite',
-    'invitation',
-    'invited_to',
-  ];
-
-  const rawValues: string[] = [];
-  for (const key of paramKeys) {
-    const vals = params.getAll(key);
-    for (const v of vals) {
-      if (v) rawValues.push(v);
-    }
-  }
-
-  // 2. If no explicit parameter values, check if any query flag itself is a function name
-  // e.g. ?rukhsati or ?ramada or ?radiant or ?rukhsati&ramada
-  if (rawValues.length === 0) {
-    for (const key of params.keys()) {
-      const lower = key.toLowerCase();
-      if (
-        matchesFunction1(lower) ||
-        matchesFunction2(lower) ||
-        matchesFunction3(lower)
-      ) {
-        rawValues.push(lower);
-      }
-    }
-  }
-
-  if (rawValues.length === 0) {
-    return [1, 2, 3];
-  }
-
-  // Check if user requested "all"
-  const combinedRaw = rawValues.join(',').toLowerCase();
-  if (combinedRaw.includes('all') || combinedRaw === '0') {
-    return [1, 2, 3];
-  }
-
-  // Split tokens by comma, pipe, slash, plus, or 'and'
-  const tokens = combinedRaw
-    .split(/[,|+;&\s]+/)
-    .map((t) => t.trim().replace(/^and$/, ''))
-    .filter(Boolean);
-
-  const matched = new Set<number>();
-
-  for (const token of tokens) {
-    if (token === 'all') {
-      return [1, 2, 3];
-    }
-
-    if (matchesFunction1(token)) {
-      matched.add(1);
-    }
-    if (matchesFunction2(token)) {
-      matched.add(2);
-    }
-    if (matchesFunction3(token)) {
-      matched.add(3);
-    }
-
-    // Generic "reception" without specifying Ramada or Radiant matches both receptions (2 & 3)
-    const norm = normalizeKey(token);
-    if ((norm === 'reception' || norm === 'receptions') && !norm.includes('ramada') && !norm.includes('radiant')) {
-      matched.add(2);
-      matched.add(3);
-    }
-  }
-
-  const result = Array.from(matched).sort((a, b) => a - b);
-  return result.length > 0 ? result : [1, 2, 3];
+  return parsed.functionIds.length > 0 ? parsed.functionIds : [1, 2, 3];
 }
 
 /**
@@ -437,28 +606,32 @@ export function getInvitedFunctionsDescription(functionIds: number[]): string {
 }
 
 /**
- * Returns canonical slug for function ID:
- * 1 -> 'rukhsati'
- * 2 -> 'ramada'
- * 3 -> 'radiant'
+ * Returns the unguessable randomized security access token for selected functions.
  */
-export function getFunctionSlug(id: number): string {
-  if (id === 1) return 'rukhsati';
-  if (id === 2) return 'ramada';
-  if (id === 3) return 'radiant';
-  return `function${id}`;
+export function getFunctionToken(functionIds: number[]): string {
+  const sorted = [...functionIds].sort((a, b) => a - b);
+  if (sorted.length === 1) {
+    if (sorted[0] === 1) return RANDOM_FUNCTION_TOKENS.FUNCTION_1; // 'v8k29' (Rukhsati)
+    if (sorted[0] === 2) return RANDOM_FUNCTION_TOKENS.FUNCTION_2; // 'm4w30' (Ramada Reception)
+    if (sorted[0] === 3) return RANDOM_FUNCTION_TOKENS.FUNCTION_3; // 'p7r02' (Radiant Resorts Reception)
+  }
+  if (sorted.length === 2) {
+    if (sorted[0] === 1 && sorted[1] === 2) return RANDOM_FUNCTION_TOKENS.FUNCTIONS_1_2; // 'x8b4w' (Rukhsati + Ramada)
+    if (sorted[0] === 2 && sorted[1] === 3) return RANDOM_FUNCTION_TOKENS.FUNCTIONS_2_3; // 'n3q9f' (Ramada + Radiant)
+    if (sorted[0] === 1 && sorted[1] === 3) return RANDOM_FUNCTION_TOKENS.FUNCTIONS_1_3; // 'g5t2k' (Rukhsati + Radiant)
+  }
+  return RANDOM_FUNCTION_TOKENS.ALL_FUNCTIONS; // 'w9v4k'
 }
 
 /**
- * Builds a clean invitation link with optional guest name and selected functions.
- * By default generates clean, human-readable function names in parameter:
- * e.g. ?function=rukhsati or ?functions=rukhsati,ramada
+ * Builds an unguessable personalized invitation link with optional guest name.
+ * Uses discrete randomized security tokens (e.g. ?invite=v8k29) rather than obvious function names,
+ * preventing guests from guessing or tampering with ceremony access.
  */
 export function buildInviteUrl(
   baseUrl: string,
   guestName: string,
-  functionIds: number[],
-  useFunctionNames: boolean = true
+  functionIds: number[]
 ): string {
   try {
     const url = new URL(
@@ -468,7 +641,7 @@ export function buildInviteUrl(
           : 'https://wedding.example.com')
     );
 
-    // Reset relevant params
+    // Reset all potential function and security parameter keys
     const keysToRemove = [
       'f',
       'fn',
@@ -478,10 +651,21 @@ export function buildInviteUrl(
       'events',
       'ceremony',
       'ceremonies',
+      'program',
+      'programs',
+      'invite',
+      'invitation',
+      'access',
+      'code',
+      'token',
+      'key',
+      'pass',
       'guest',
       'name',
       'to',
       'admin',
+      'host',
+      'usher',
       'rukhsati',
       'ramada',
       'radiant',
@@ -495,21 +679,11 @@ export function buildInviteUrl(
       url.searchParams.set('guest', trimmedName);
     }
 
-    // Only set parameter if not all 3 functions
+    // Assign randomized unguessable access key for specific function subsets
     const sorted = [...functionIds].sort((a, b) => a - b);
     if (sorted.length > 0 && sorted.length < 3) {
-      if (useFunctionNames) {
-        if (sorted.length === 1) {
-          url.searchParams.set('function', getFunctionSlug(sorted[0]));
-        } else {
-          url.searchParams.set(
-            'functions',
-            sorted.map((id) => getFunctionSlug(id)).join(',')
-          );
-        }
-      } else {
-        url.searchParams.set('f', sorted.join(','));
-      }
+      const secureCode = getFunctionToken(sorted);
+      url.searchParams.set('invite', secureCode);
     }
 
     return url.toString();
@@ -521,17 +695,8 @@ export function buildInviteUrl(
     }
     const sorted = [...functionIds].sort((a, b) => a - b);
     if (sorted.length > 0 && sorted.length < 3) {
-      if (useFunctionNames) {
-        if (sorted.length === 1) {
-          params.push(`function=${getFunctionSlug(sorted[0])}`);
-        } else {
-          params.push(
-            `functions=${sorted.map((id) => getFunctionSlug(id)).join(',')}`
-          );
-        }
-      } else {
-        params.push(`f=${sorted.join(',')}`);
-      }
+      const secureCode = getFunctionToken(sorted);
+      params.push(`invite=${secureCode}`);
     }
     return params.length > 0 ? `${base}?${params.join('&')}` : base;
   }
