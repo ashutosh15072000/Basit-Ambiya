@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import confetti from 'canvas-confetti';
+import QRCode from 'qrcode';
 import { FloatingPetals } from './components/FloatingPetals';
 import { MusicPlayer } from './components/MusicPlayer';
 import { IntroVideo } from './components/IntroVideo';
@@ -341,6 +342,94 @@ export default function App() {
       console.warn('Admit all events error:', e);
       setCheckInScanInfo((prev) => (prev ? { ...prev, loadingEvent: null } : null));
     }
+  };
+
+  const [verificationQrDataUrl, setVerificationQrDataUrl] = useState<string>('');
+  const [copiedPassLink, setCopiedPassLink] = useState<boolean>(false);
+  const [generatingQr, setGeneratingQr] = useState<boolean>(false);
+
+  // Generate QR code for the current guest verification payload
+  useEffect(() => {
+    if (!checkInScanInfo) {
+      setVerificationQrDataUrl('');
+      return;
+    }
+
+    let isMounted = true;
+    setGeneratingQr(true);
+
+    let baseUrl = 'https://basit-ambiya.wedding/';
+    if (typeof window !== 'undefined') {
+      try {
+        const cur = new URL(window.location.href);
+        baseUrl = `${cur.origin}${cur.pathname}`;
+      } catch {
+        baseUrl = `${window.location.origin}${window.location.pathname || '/'}`;
+      }
+    }
+
+    const params = new URLSearchParams();
+    params.set('checkin', 'verified');
+    params.set('pass', checkInScanInfo.passId || 'BA-PASS');
+    params.set('name', checkInScanInfo.guestName || 'Honored Guest');
+    params.set('guests', String(checkInScanInfo.guestCount || 1));
+    params.set('events', (checkInScanInfo.events || []).join('|'));
+    params.set('t', String(Date.now()));
+
+    const separator = baseUrl.includes('?') ? '&' : '?';
+    const fullVerificationUrl = `${baseUrl}${separator}${params.toString()}`;
+
+    QRCode.toDataURL(fullVerificationUrl, {
+      width: 420,
+      margin: 1.5,
+      color: {
+        dark: '#1b4332', // Royal forest green
+        light: '#ffffff',
+      },
+      errorCorrectionLevel: 'H',
+    })
+      .then((url) => {
+        if (isMounted) {
+          setVerificationQrDataUrl(url);
+          setGeneratingQr(false);
+        }
+      })
+      .catch((err) => {
+        console.warn('QR code generation failed for verification modal:', err);
+        if (isMounted) setGeneratingQr(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [checkInScanInfo]);
+
+  const handleCopyPassLink = () => {
+    if (!checkInScanInfo) return;
+    let baseUrl = window.location.origin + window.location.pathname;
+    const params = new URLSearchParams();
+    params.set('checkin', 'verified');
+    params.set('pass', checkInScanInfo.passId || 'BA-PASS');
+    params.set('name', checkInScanInfo.guestName || 'Honored Guest');
+    params.set('guests', String(checkInScanInfo.guestCount || 1));
+    params.set('events', (checkInScanInfo.events || []).join('|'));
+    params.set('t', String(Date.now()));
+    const fullUrl = `${baseUrl}?${params.toString()}`;
+
+    navigator.clipboard.writeText(fullUrl).then(() => {
+      setCopiedPassLink(true);
+      setTimeout(() => setCopiedPassLink(false), 3000);
+    }).catch(() => {});
+  };
+
+  const handleDownloadQrImage = () => {
+    if (!verificationQrDataUrl || !checkInScanInfo) return;
+    const link = document.createElement('a');
+    link.href = verificationQrDataUrl;
+    link.download = `VIP-Pass-${(checkInScanInfo.guestName || 'Guest').replace(/[^a-zA-Z0-9]/g, '-')}.png`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   useEffect(() => {
@@ -835,6 +924,59 @@ export default function App() {
                 <p className="font-serif-display italic text-xs sm:text-sm text-foreground/75 mt-1">
                   Official digital entry pass for the wedding celebrations of Basit &amp; Ambiya.
                 </p>
+              </div>
+
+              {/* QR Code Container */}
+              <div className="relative mx-auto w-56 sm:w-60 p-3.5 bg-white rounded-2xl border-2 border-gold-soft/80 shadow-md flex flex-col items-center space-y-2">
+                {/* Decorative Frame Corners */}
+                <div className="absolute top-1 left-1 w-3 h-3 border-t-2 border-l-2 border-gold" />
+                <div className="absolute top-1 right-1 w-3 h-3 border-t-2 border-r-2 border-gold" />
+                <div className="absolute bottom-1 left-1 w-3 h-3 border-b-2 border-l-2 border-gold" />
+                <div className="absolute bottom-1 right-1 w-3 h-3 border-b-2 border-r-2 border-gold" />
+
+                {verificationQrDataUrl ? (
+                  <div className="p-1.5 bg-white rounded-xl">
+                    <img
+                      src={verificationQrDataUrl}
+                      alt={`QR Code Pass for ${checkInScanInfo.guestName}`}
+                      className="w-48 h-48 sm:w-52 sm:h-52 object-contain mx-auto"
+                    />
+                  </div>
+                ) : (
+                  <div className="w-48 h-48 flex items-center justify-center text-xs font-cinzel text-stone-500">
+                    <span className="animate-pulse">Generating Secure QR...</span>
+                  </div>
+                )}
+
+                <div className="text-center pt-0.5">
+                  <span className="inline-flex items-center gap-1 font-cinzel text-[10px] font-bold text-emerald-900 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                    <span>🎟️</span> Show at Venue Entrance
+                  </span>
+                  <p className="font-mono text-[10px] text-foreground/60 mt-1 font-bold">
+                    {checkInScanInfo.passId}
+                  </p>
+                </div>
+              </div>
+
+              {/* Quick Pass Actions (Copy Link & Save Image) */}
+              <div className="grid grid-cols-2 gap-2 max-w-xs mx-auto">
+                <button
+                  type="button"
+                  onClick={handleCopyPassLink}
+                  className="py-2 px-3 rounded-xl border border-gold text-stone-800 bg-white/80 hover:bg-gold-soft/30 font-cinzel text-[11px] font-bold uppercase tracking-wider transition-all cursor-pointer shadow-2xs flex items-center justify-center gap-1.5"
+                >
+                  <span>{copiedPassLink ? '✓' : '📋'}</span>
+                  <span>{copiedPassLink ? 'Copied!' : 'Copy Link'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDownloadQrImage}
+                  disabled={!verificationQrDataUrl}
+                  className="py-2 px-3 rounded-xl bg-emerald-800 hover:bg-emerald-900 text-white font-cinzel text-[11px] font-bold uppercase tracking-wider transition-all cursor-pointer shadow-2xs flex items-center justify-center gap-1.5 disabled:opacity-50"
+                >
+                  <span>💾</span>
+                  <span>Save QR</span>
+                </button>
               </div>
 
               {/* Guest Details Overview */}
