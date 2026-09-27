@@ -17,6 +17,11 @@ import {
   Check,
   ChevronRight,
   Zap,
+  Lock,
+  Unlock,
+  KeyRound,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import {
   recordGuestCheckIn,
@@ -57,6 +62,48 @@ export const AdminQrScannerModal: React.FC<AdminQrScannerModalProps> = ({
   const [scannedResult, setScannedResult] = useState<DecodedScanData | null>(null);
   const [isProcessingCheckIn, setIsProcessingCheckIn] = useState(false);
   const [storedRsvps, setStoredRsvps] = useState<RsvpRecord[]>(() => getStoredRsvps());
+
+  // Gate Scanner Authentication State
+  const [isScannerAuthenticated, setIsScannerAuthenticated] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        return (
+          sessionStorage.getItem('wedding_admin_authenticated') === 'true' ||
+          sessionStorage.getItem('wedding_usher_unlocked') === 'true'
+        );
+      } catch {
+        return false;
+      }
+    }
+    return false;
+  });
+  const [scannerPinInput, setScannerPinInput] = useState('');
+  const [scannerPinError, setScannerPinError] = useState<string | null>(null);
+  const [showPinText, setShowPinText] = useState(false);
+
+  const handleScannerPinSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const clean = scannerPinInput.trim().toLowerCase();
+    if (
+      clean === '2026' ||
+      clean === 'basit2026' ||
+      clean === 'admin2026' ||
+      clean === 'ambiya2026' ||
+      clean === 'rsvp' ||
+      clean === 'admin' ||
+      clean === 'basit'
+    ) {
+      setIsScannerAuthenticated(true);
+      setScannerPinError(null);
+      setScannerPinInput('');
+      try {
+        sessionStorage.setItem('wedding_admin_authenticated', 'true');
+        sessionStorage.setItem('wedding_usher_unlocked', 'true');
+      } catch {}
+    } else {
+      setScannerPinError('Incorrect Gate PIN. Please enter passcode 2026.');
+    }
+  };
 
   const refreshStoredRsvps = () => {
     setStoredRsvps(getStoredRsvps());
@@ -497,7 +544,7 @@ export const AdminQrScannerModal: React.FC<AdminQrScannerModalProps> = ({
   };
 
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && isScannerAuthenticated) {
       startCamera();
     } else {
       stopCamera();
@@ -508,7 +555,7 @@ export const AdminQrScannerModal: React.FC<AdminQrScannerModalProps> = ({
     return () => {
       stopCamera();
     };
-  }, [isOpen, facingMode]);
+  }, [isOpen, isScannerAuthenticated, facingMode]);
 
   if (!isOpen) return null;
 
@@ -532,20 +579,22 @@ export const AdminQrScannerModal: React.FC<AdminQrScannerModalProps> = ({
           </div>
 
           <div className="flex items-center justify-between sm:justify-end gap-2">
-            {/* Quick Check-In Mode Pill Button */}
-            <button
-              type="button"
-              onClick={toggleQuickMode}
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full font-cinzel text-[11px] font-bold uppercase tracking-wider transition-all cursor-pointer border shadow-xs ${
-                quickCheckInMode
-                  ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-stone-950 border-amber-300 ring-2 ring-amber-400/40 shadow-amber-500/20'
-                  : 'bg-stone-100 text-stone-600 border-stone-300 hover:bg-stone-200'
-              }`}
-              title="When ON: scanning immediately admits the guest for ALL ceremonies in 1 tap without extra steps."
-            >
-              <Zap className={`w-3.5 h-3.5 ${quickCheckInMode ? 'fill-amber-950 text-amber-950 animate-bounce' : 'text-stone-500'}`} />
-              <span>Quick Check-In: {quickCheckInMode ? 'ON ⚡' : 'OFF'}</span>
-            </button>
+            {isScannerAuthenticated && (
+              /* Quick Check-In Mode Pill Button */
+              <button
+                type="button"
+                onClick={toggleQuickMode}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full font-cinzel text-[11px] font-bold uppercase tracking-wider transition-all cursor-pointer border shadow-xs ${
+                  quickCheckInMode
+                    ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-stone-950 border-amber-300 ring-2 ring-amber-400/40 shadow-amber-500/20'
+                    : 'bg-stone-100 text-stone-600 border-stone-300 hover:bg-stone-200'
+                }`}
+                title="When ON: scanning immediately admits the guest for ALL ceremonies in 1 tap without extra steps."
+              >
+                <Zap className={`w-3.5 h-3.5 ${quickCheckInMode ? 'fill-amber-950 text-amber-950 animate-bounce' : 'text-stone-500'}`} />
+                <span>Quick Check-In: {quickCheckInMode ? 'ON ⚡' : 'OFF'}</span>
+              </button>
+            )}
 
             <button
               type="button"
@@ -557,6 +606,79 @@ export const AdminQrScannerModal: React.FC<AdminQrScannerModalProps> = ({
             </button>
           </div>
         </div>
+
+        {!isScannerAuthenticated ? (
+          /* Scanner PIN Gate Screen */
+          <div className="p-6 sm:p-8 text-center space-y-5 max-w-sm mx-auto my-auto animate-fade-in">
+            <div className="w-14 h-14 rounded-full bg-gradient-to-br from-emerald-800 to-[#1b4332] text-[#fcf6ba] flex items-center justify-center mx-auto shadow-lg border-2 border-[#e4c88a]">
+              <Lock className="w-7 h-7" />
+            </div>
+
+            <div>
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-100 text-amber-900 border border-amber-300 font-cinzel text-[10px] font-bold uppercase tracking-wider mb-2">
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-700" />
+                <span>Host / Usher Admission Desk</span>
+              </span>
+              <h4 className="font-cinzel text-lg sm:text-xl font-bold text-stone-900 uppercase tracking-wide">
+                Enter Gate Passcode
+              </h4>
+              <p className="font-serif-display italic text-xs text-stone-600 mt-1">
+                Enter host passcode (e.g. 2026) to activate camera scanner &amp; guest admissions.
+              </p>
+            </div>
+
+            <form onSubmit={handleScannerPinSubmit} className="space-y-3.5 text-left">
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-stone-400">
+                  <KeyRound className="w-4 h-4 text-emerald-800" />
+                </div>
+                <input
+                  type={showPinText ? 'text' : 'password'}
+                  value={scannerPinInput}
+                  onChange={(e) => {
+                    setScannerPinInput(e.target.value);
+                    if (scannerPinError) setScannerPinError(null);
+                  }}
+                  placeholder="Enter Passcode..."
+                  autoFocus
+                  className="w-full pl-9 pr-10 py-2.5 rounded-xl bg-white border-2 border-stone-300 focus:border-emerald-700 focus:ring-2 focus:ring-emerald-700/20 font-mono text-center tracking-widest text-base font-bold outline-none text-stone-900 shadow-inner"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPinText(!showPinText)}
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-stone-400 hover:text-stone-700 cursor-pointer"
+                  tabIndex={-1}
+                >
+                  {showPinText ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+
+              {scannerPinError && (
+                <div className="p-2 rounded-xl bg-rose-50 border border-rose-300 text-rose-800 text-xs font-serif-display text-center font-semibold">
+                  {scannerPinError}
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-2.5 pt-1">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="py-2.5 px-3 rounded-xl border border-stone-300 hover:bg-stone-100 text-stone-700 font-cinzel text-xs font-bold uppercase transition-all cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="py-2.5 px-3 rounded-xl bg-gradient-to-r from-emerald-800 to-[#1b4332] hover:brightness-110 text-white font-cinzel text-xs font-bold uppercase tracking-wider transition-all cursor-pointer shadow-md flex items-center justify-center gap-1.5"
+                >
+                  <Unlock className="w-3.5 h-3.5 text-amber-300" />
+                  <span>Unlock</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        ) : (
+          <>
 
         {/* Live Today's Check-In Counter Banner */}
         <div className="bg-gradient-to-r from-[#163828] via-[#1d4d37] to-[#163828] rounded-2xl p-2.5 sm:p-3 text-white border border-[#e4c88a]/40 shadow-sm flex items-center justify-between gap-3 text-left shrink-0">
@@ -911,6 +1033,8 @@ export const AdminQrScannerModal: React.FC<AdminQrScannerModalProps> = ({
             </div>
           )}
         </div>
+        </>
+        )}
       </div>
     </div>
   );

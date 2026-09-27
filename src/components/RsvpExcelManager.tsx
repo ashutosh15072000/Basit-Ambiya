@@ -25,6 +25,12 @@ import {
   Plus,
   Image as ImageIcon,
   QrCode,
+  Lock,
+  Unlock,
+  KeyRound,
+  Eye,
+  EyeOff,
+  ShieldCheck,
 } from 'lucide-react';
 import {
   RsvpRecord,
@@ -110,6 +116,56 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
   const [selectedCardImageId, setSelectedCardImageId] = useState<string>('auto');
   const [viewPassGuest, setViewPassGuest] = useState<CheckInPassData | null>(null);
   const [showScannerModal, setShowScannerModal] = useState<boolean>(false);
+
+  // Authentication & Passcode Gate State
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        return sessionStorage.getItem('wedding_admin_authenticated') === 'true';
+      } catch {
+        return false;
+      }
+    }
+    return false;
+  });
+  const [passwordInput, setPasswordInput] = useState('');
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [showPasswordText, setShowPasswordText] = useState(false);
+
+  const handlePasswordSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const clean = passwordInput.trim().toLowerCase();
+    // Valid passwords: 2026, basit2026, admin2026, ambya2026, rsvp, admin, basit
+    if (
+      clean === '2026' ||
+      clean === 'basit2026' ||
+      clean === 'admin2026' ||
+      clean === 'ambiya2026' ||
+      clean === 'rsvp' ||
+      clean === 'admin' ||
+      clean === 'basit'
+    ) {
+      setIsAuthenticated(true);
+      setPasswordError(null);
+      setPasswordInput('');
+      try {
+        sessionStorage.setItem('wedding_admin_authenticated', 'true');
+        sessionStorage.setItem('wedding_usher_unlocked', 'true');
+      } catch {}
+    } else {
+      setPasswordError('Incorrect Admin Passcode. Please enter the valid passcode (e.g. 2026).');
+    }
+  };
+
+  const handleLock = () => {
+    setIsAuthenticated(false);
+    setPasswordInput('');
+    setPasswordError(null);
+    try {
+      sessionStorage.removeItem('wedding_admin_authenticated');
+      sessionStorage.removeItem('wedding_usher_unlocked');
+    } catch {}
+  };
 
   const resolveActiveCard = (
     functionIds: number[],
@@ -561,6 +617,17 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
           </div>
 
           <div className="flex items-center gap-2">
+            {isAuthenticated && (
+              <button
+                type="button"
+                onClick={handleLock}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-950/80 hover:bg-red-950/80 text-amber-200 hover:text-rose-200 font-cinzel text-[11px] font-bold uppercase tracking-wider border border-white/20 transition-colors cursor-pointer"
+                title="Lock & Logout Admin Panel"
+              >
+                <Lock className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Lock</span>
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setShowSettings(!showSettings)}
@@ -581,8 +648,80 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
           </div>
         </div>
 
-        {/* Tab Navigation */}
-        <div className="flex items-center border-b border-gold-soft/40 bg-[#f4ede2] px-6 pt-3 shrink-0 gap-2">
+        {!isAuthenticated ? (
+          /* Password Authentication Gate Screen */
+          <div className="p-8 sm:p-12 text-center space-y-6 max-w-md mx-auto my-auto animate-fade-in">
+            <div className="w-16 h-16 rounded-full bg-gradient-to-br from-emerald-800 to-[#1b4332] text-[#fcf6ba] flex items-center justify-center mx-auto shadow-xl border-2 border-[#e4c88a]">
+              <Lock className="w-8 h-8" />
+            </div>
+
+            <div>
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-100 text-amber-900 border border-amber-300 font-cinzel text-[11px] font-bold uppercase tracking-wider mb-2">
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-700" />
+                <span>Admin &amp; Host Restricted Area</span>
+              </span>
+              <h4 className="font-cinzel text-xl sm:text-2xl font-bold text-stone-900 uppercase tracking-wide mt-1">
+                Enter Admin Passcode
+              </h4>
+              <p className="font-serif-display italic text-xs sm:text-sm text-stone-600 mt-1.5 leading-relaxed">
+                Please enter the wedding host passcode to unlock RSVP records, QR scanner, Excel tools, and GitHub synchronization.
+              </p>
+            </div>
+
+            <form onSubmit={handlePasswordSubmit} className="space-y-4 text-left">
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-stone-400">
+                  <KeyRound className="w-5 h-5 text-emerald-800" />
+                </div>
+                <input
+                  type={showPasswordText ? 'text' : 'password'}
+                  value={passwordInput}
+                  onChange={(e) => {
+                    setPasswordInput(e.target.value);
+                    if (passwordError) setPasswordError(null);
+                  }}
+                  placeholder="Enter Passcode (e.g. 2026)..."
+                  autoFocus
+                  className="w-full pl-11 pr-12 py-3 rounded-xl bg-white border-2 border-stone-300 focus:border-emerald-700 focus:ring-4 focus:ring-emerald-700/10 font-mono text-center tracking-widest text-lg font-bold outline-none text-stone-900 transition-all shadow-inner"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPasswordText(!showPasswordText)}
+                  className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-stone-400 hover:text-stone-700 cursor-pointer"
+                  tabIndex={-1}
+                >
+                  {showPasswordText ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+
+              {passwordError && (
+                <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-300 text-rose-800 text-xs font-serif-display text-center font-semibold">
+                  {passwordError}
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="py-3 px-4 rounded-xl border-2 border-stone-300 hover:bg-stone-100 text-stone-700 font-cinzel text-xs font-bold uppercase tracking-wider transition-all cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-800 via-[#1b4332] to-emerald-900 hover:brightness-110 text-white font-cinzel text-xs font-bold uppercase tracking-wider transition-all cursor-pointer shadow-md flex items-center justify-center gap-2"
+                >
+                  <Unlock className="w-4 h-4 text-amber-300" />
+                  <span>Unlock</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        ) : (
+          <>
+            {/* Tab Navigation */}
+            <div className="flex items-center border-b border-gold-soft/40 bg-[#f4ede2] px-6 pt-3 shrink-0 gap-2">
           <button
             type="button"
             onClick={() => setActiveTab('rsvps')}
@@ -1836,6 +1975,8 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
             </div>
           )}
         </div>
+        </>
+        )}
 
         {/* Footer */}
         <div className="bg-[#f7f3ec] p-4 border-t border-gold-soft/40 flex items-center justify-between text-xs font-cinzel text-foreground/70 shrink-0">
