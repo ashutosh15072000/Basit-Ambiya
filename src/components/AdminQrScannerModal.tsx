@@ -56,6 +56,46 @@ export const AdminQrScannerModal: React.FC<AdminQrScannerModalProps> = ({
   const [torchSupported, setTorchSupported] = useState(false);
   const [scannedResult, setScannedResult] = useState<DecodedScanData | null>(null);
   const [isProcessingCheckIn, setIsProcessingCheckIn] = useState(false);
+  const [storedRsvps, setStoredRsvps] = useState<RsvpRecord[]>(() => getStoredRsvps());
+
+  const refreshStoredRsvps = () => {
+    setStoredRsvps(getStoredRsvps());
+  };
+
+  useEffect(() => {
+    if (isOpen) {
+      refreshStoredRsvps();
+    }
+    const handleUpdate = () => refreshStoredRsvps();
+    window.addEventListener('wedding_rsvp_updated', handleUpdate);
+    return () => {
+      window.removeEventListener('wedding_rsvp_updated', handleUpdate);
+    };
+  }, [isOpen]);
+
+  // Compute Today's Check-In Counter & Heads
+  const todayStr = new Date().toDateString();
+  const checkedInTodayList = storedRsvps.filter((r) => {
+    if (!r.checked_in) return false;
+    if (r.checked_in_at) {
+      const d = new Date(r.checked_in_at);
+      if (!isNaN(d.getTime()) && d.toDateString() === todayStr) return true;
+    }
+    if (r.checked_in_events_map && Object.keys(r.checked_in_events_map).length > 0) {
+      const hasToday = Object.values(r.checked_in_events_map).some((ts) => {
+        const d = new Date(ts);
+        return !isNaN(d.getTime()) && d.toDateString() === todayStr;
+      });
+      if (hasToday) return true;
+    }
+    return Boolean(r.checked_in);
+  });
+
+  const checkedInTodayCount = checkedInTodayList.length;
+  const checkedInTodayHeads = checkedInTodayList.reduce(
+    (sum, r) => sum + (Number(r.checked_in_guest_count) || Number(r.guest_count) || 1),
+    0
+  );
   
   // Quick Check-In Mode (1-Tap Auto-Admit for all scheduled ceremonies)
   const [quickCheckInMode, setQuickCheckInMode] = useState<boolean>(() => {
@@ -203,6 +243,7 @@ export const AdminQrScannerModal: React.FC<AdminQrScannerModalProps> = ({
         if (onCheckInSuccess) {
           onCheckInSuccess(res.record, 'All Events');
         }
+        refreshStoredRsvps();
       }
     } catch (err: any) {
       setIsProcessingCheckIn(false);
@@ -437,6 +478,7 @@ export const AdminQrScannerModal: React.FC<AdminQrScannerModalProps> = ({
         if (onCheckInSuccess) {
           onCheckInSuccess(res.record, targetEvent);
         }
+        refreshStoredRsvps();
       }
     } catch (err: any) {
       setIsProcessingCheckIn(false);
@@ -513,6 +555,35 @@ export const AdminQrScannerModal: React.FC<AdminQrScannerModalProps> = ({
             >
               <X className="w-5 h-5" />
             </button>
+          </div>
+        </div>
+
+        {/* Live Today's Check-In Counter Banner */}
+        <div className="bg-gradient-to-r from-[#163828] via-[#1d4d37] to-[#163828] rounded-2xl p-2.5 sm:p-3 text-white border border-[#e4c88a]/40 shadow-sm flex items-center justify-between gap-3 text-left shrink-0">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-white/10 text-[#fcf6ba] flex items-center justify-center border border-[#e4c88a]/30 shrink-0">
+              <Users className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="flex items-center gap-1.5">
+                <span className="font-cinzel text-[11px] sm:text-xs font-bold uppercase tracking-wider text-[#fcf6ba]">
+                  Guests Checked In Today
+                </span>
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              </div>
+              <p className="font-serif-display text-[10px] sm:text-[11px] text-white/75 italic">
+                Live entrance arrivals &amp; attendance tally
+              </p>
+            </div>
+          </div>
+
+          <div className="text-right shrink-0 bg-black/25 px-3 py-1.5 rounded-xl border border-white/10">
+            <div className="font-serif-display text-lg sm:text-xl font-bold text-[#fcf6ba] leading-none">
+              {checkedInTodayCount} <span className="text-[11px] font-sans font-normal text-white/80">VIPs</span>
+            </div>
+            <div className="font-cinzel text-[10px] text-emerald-200 tracking-wide mt-0.5">
+              {checkedInTodayHeads} {checkedInTodayHeads === 1 ? 'Guest Head' : 'Guest Heads'}
+            </div>
           </div>
         </div>
 
