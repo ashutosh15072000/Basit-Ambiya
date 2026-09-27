@@ -31,6 +31,8 @@ import {
 import {
   parseInvitedFunctionIds,
   parseGuestName,
+  validateAndParseInvitationUrl,
+  ParsedInvitationState,
   ALL_FUNCTIONS,
 } from './utils/invitationConfig';
 import { getAssetPath } from './utils/assets';
@@ -122,13 +124,18 @@ export default function App() {
   const [showAdminExcel, setShowAdminExcel] = useState(false);
   const [isAdminMode, setIsAdminMode] = useState(false);
 
-  // Dynamic guest invitation parameters (?guest=Name&f=1,2)
+  // Dynamic guest invitation parameters (?guest=Name&function=rukhsati,ramada)
+  const [parsedInvitation, setParsedInvitation] = useState<ParsedInvitationState>(() =>
+    validateAndParseInvitationUrl(typeof window !== 'undefined' ? window.location.search : '')
+  );
   const [invitedFunctionIds, setInvitedFunctionIds] = useState<number[]>(() =>
-    parseInvitedFunctionIds(typeof window !== 'undefined' ? window.location.search : '')
+    parsedInvitation.functionIds.length > 0 ? parsedInvitation.functionIds : [1, 2, 3]
   );
   const [guestName, setGuestName] = useState<string>(() =>
     parseGuestName(typeof window !== 'undefined' ? window.location.search : '')
   );
+
+  const isUrlInvalid = parsedInvitation.isTamperedOrInvalid;
 
   // Filter events schedule according to invited functions (1: Rukhsati, 2: Ramada, 3: Radiant)
   const visibleEventsSchedule = EVENTS_SCHEDULE.filter((_, idx) =>
@@ -571,6 +578,114 @@ export default function App() {
       setOpened(true);
     }, 320);
   };
+
+  if (isUrlInvalid) {
+    return (
+      <div className="relative min-h-screen bg-[#0b1b13] text-stone-100 flex items-center justify-center p-4 sm:p-6 select-none overflow-hidden">
+        <IslamicPatternOverlay opacity={0.08} />
+        <FloatingPetals count={16} />
+
+        <div className="relative z-10 max-w-lg w-full bg-[#0f241a]/95 backdrop-blur-md rounded-3xl p-6 sm:p-10 border-2 border-[#d4af37]/40 shadow-2xl text-center space-y-6 animate-fade-in">
+          {/* Bismillah Header */}
+          <div className="space-y-1">
+            <p className="font-amiri text-2xl sm:text-3xl text-[#d4af37]">
+              بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ
+            </p>
+            <p className="font-cinzel text-[11px] tracking-[0.25em] text-[#d4af37]/80 uppercase">
+              In The Name of Allah, Most Gracious, Most Merciful
+            </p>
+          </div>
+
+          <div className="w-16 h-16 mx-auto rounded-full bg-[#d4af37]/10 border border-[#d4af37]/40 flex items-center justify-center shadow-inner">
+            <span className="text-2xl">🔒</span>
+          </div>
+
+          <div className="space-y-2.5">
+            <h1 className="font-cinzel text-xl sm:text-2xl font-bold text-[#f5ebd7] tracking-wide">
+              Invitation Link Not Found
+            </h1>
+            <p className="font-serif-display text-sm text-stone-300 leading-relaxed">
+              The invitation access code specified in this link{' '}
+              {parsedInvitation.invalidTokens.length > 0 && (
+                <span className="font-mono text-amber-300 bg-black/40 px-2 py-0.5 rounded-md text-xs border border-amber-500/30">
+                  "{parsedInvitation.invalidTokens.join(', ')}"
+                </span>
+              )}{' '}
+              is not recognized or has been modified. Please use the personalized link sent by the wedding hosts.
+            </p>
+          </div>
+
+          <div className="pt-2 flex flex-col sm:flex-row gap-3 justify-center">
+            <button
+              onClick={() => {
+                if (typeof window !== 'undefined') {
+                  window.location.href = window.location.origin + window.location.pathname;
+                }
+              }}
+              className="px-6 py-3 rounded-xl bg-gradient-to-r from-[#d4af37] to-[#b8972e] text-[#0b1b13] font-cinzel font-bold text-xs uppercase tracking-widest hover:brightness-110 shadow-lg cursor-pointer transition-all"
+            >
+              Open Full Invitation
+            </button>
+            <button
+              onClick={() => setShowUsherPinModal(true)}
+              className="px-5 py-3 rounded-xl bg-white/10 hover:bg-white/20 text-stone-200 border border-white/20 font-cinzel text-xs font-bold uppercase tracking-wider cursor-pointer transition-all"
+            >
+              Host PIN
+            </button>
+          </div>
+
+          <p className="text-[11px] font-cormorant italic text-stone-400">
+            For personal invitation assistance, please contact the wedding hosts (Basit &amp; Ambiya).
+          </p>
+        </div>
+
+        {/* Pin Modal for hosts if needed */}
+        {showUsherPinModal && (
+          <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
+            <div className="w-full max-w-sm bg-white rounded-2xl p-6 shadow-2xl border-2 border-emerald-800 text-stone-800">
+              <form onSubmit={handleUnlockUsherDesk} className="space-y-4">
+                <h3 className="font-cinzel text-lg font-bold text-emerald-950 text-center">
+                  Host &amp; Usher Desk
+                </h3>
+                <input
+                  type="password"
+                  value={usherPinInput}
+                  onChange={(e) => setUsherPinInput(e.target.value)}
+                  placeholder="Enter 4-digit PIN..."
+                  autoFocus
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-stone-300 font-mono text-center tracking-widest text-lg font-bold outline-none"
+                />
+                {usherPinError && (
+                  <p className="text-rose-700 text-xs font-serif-display text-center font-semibold">
+                    {usherPinError}
+                  </p>
+                )}
+                <div className="grid grid-cols-2 gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowUsherPinModal(false);
+                      setUsherPinInput('');
+                      setUsherPinError(null);
+                    }}
+                    className="py-2.5 px-3 rounded-xl border border-stone-300 text-stone-700 font-cinzel text-xs font-bold uppercase cursor-pointer hover:bg-stone-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="py-2.5 px-3 rounded-xl bg-emerald-800 hover:bg-emerald-900 text-white font-cinzel text-xs font-bold uppercase cursor-pointer shadow-md"
+                  >
+                    Unlock
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="relative min-h-screen bg-cream selection:bg-rose-100 selection:text-rose-900">
