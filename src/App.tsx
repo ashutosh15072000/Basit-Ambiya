@@ -752,7 +752,7 @@ export default function App() {
                 </div>
               )}
 
-              {/* Quick Guest Stats Box */}
+              {/* Live RSVP Excel Status */}
               <div className="bg-white/95 rounded-2xl p-3.5 border border-gold-soft/60 shadow-xs space-y-2 text-left text-xs font-serif-display">
                 <div className="flex justify-between border-b border-gold-soft/30 pb-1.5">
                   <span className="font-cinzel text-foreground/60 uppercase text-[11px] font-semibold">Pass ID</span>
@@ -772,6 +772,21 @@ export default function App() {
                   </span>
                 </div>
               </div>
+
+              {/* ⚡ ONE-TAP QUICK ADMIT ALL EVENTS HERO BUTTON */}
+              <button
+                type="button"
+                disabled={Boolean(checkInScanInfo.loadingEvent)}
+                onClick={handleAdmitAllEvents}
+                className="w-full py-3 px-4 rounded-2xl bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 hover:brightness-105 text-stone-950 font-cinzel text-xs sm:text-sm font-bold uppercase tracking-wider transition-all shadow-md cursor-pointer border-2 border-amber-600 flex items-center justify-center gap-2 hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50"
+              >
+                <span>⚡</span>
+                <span>
+                  {checkInScanInfo.loadingEvent === 'all'
+                    ? 'Admitting All Ceremonies...'
+                    : `Quick Check-In (Admit All ${checkInScanInfo.events.length} Events)`}
+                </span>
+              </button>
 
               {/* Per-Ceremony Check-In Controls */}
               <div className="space-y-2 text-left">

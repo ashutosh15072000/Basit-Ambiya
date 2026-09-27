@@ -16,6 +16,7 @@ import {
   ShieldCheck,
   Check,
   ChevronRight,
+  Zap,
 } from 'lucide-react';
 import {
   recordGuestCheckIn,
@@ -39,6 +40,7 @@ export interface DecodedScanData {
   events: string[];
   matchedRecord?: RsvpRecord | null;
   checkedInMap?: Record<string, string>;
+  autoAdmitted?: boolean;
 }
 
 export const AdminQrScannerModal: React.FC<AdminQrScannerModalProps> = ({
@@ -53,6 +55,17 @@ export const AdminQrScannerModal: React.FC<AdminQrScannerModalProps> = ({
   const [torchSupported, setTorchSupported] = useState(false);
   const [scannedResult, setScannedResult] = useState<DecodedScanData | null>(null);
   const [isProcessingCheckIn, setIsProcessingCheckIn] = useState(false);
+  
+  // Quick Check-In Mode (1-Tap Auto-Admit for all scheduled ceremonies)
+  const [quickCheckInMode, setQuickCheckInMode] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('wedding_quick_checkin_mode');
+      return saved !== null ? saved === 'true' : true; // Default ON for fastest processing at busy entrance
+    } catch {
+      return true;
+    }
+  });
+
   const [checkInFeedback, setCheckInFeedback] = useState<{
     type: 'success' | 'error' | null;
     message: string;
@@ -64,6 +77,16 @@ export const AdminQrScannerModal: React.FC<AdminQrScannerModalProps> = ({
   const animationFrameId = useRef<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const lensCaptureInputRef = useRef<HTMLInputElement>(null);
+
+  const toggleQuickMode = () => {
+    setQuickCheckInMode((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('wedding_quick_checkin_mode', String(next));
+      } catch {}
+      return next;
+    });
+  };
 
   // Parse QR text / URL into guest payload
   const parseQrContent = (text: string): DecodedScanData | null => {
@@ -132,10 +155,78 @@ export const AdminQrScannerModal: React.FC<AdminQrScannerModalProps> = ({
         events: match?.events && match.events.length > 0 ? match.events : events,
         matchedRecord: match || null,
         checkedInMap,
+        autoAdmitted: false,
       };
     } catch (err) {
       console.warn('QR parse failed:', err);
       return null;
+    }
+  };
+
+  // Immediate Auto Quick-Admit for All Scheduled Events
+  const executeInstantQuickAdmit = async (data: DecodedScanData) => {
+    setIsProcessingCheckIn(true);
+    setCheckInFeedback({ type: null, message: '' });
+
+    try {
+      const res = await recordGuestCheckIn({
+        passId: data.passId,
+        guestName: data.guestName,
+        guestCount: data.guestCount,
+        events: data.events,
+        checkInAll: true,
+      });
+
+      setIsProcessingCheckIn(false);
+
+      if (res.success) {
+        setScannedResult({
+          ...data,
+          matchedRecord: res.record,
+          checkedInMap: res.record.checked_in_events_map || {},
+          autoAdmitted: true,
+        });
+
+        setCheckInFeedback({
+          type: 'success',
+          message: `⚡ Quick Admitted: ${data.guestName} (${data.guestCount} heads) for ALL functions!`,
+        });
+
+        confetti({
+          particleCount: 80,
+          spread: 80,
+          origin: { y: 0.35 },
+          colors: ['#10b981', '#c5a059', '#1b4332', '#e4c88a'],
+        });
+
+        if (onCheckInSuccess) {
+          onCheckInSuccess(res.record, 'All Events');
+        }
+      }
+    } catch (err: any) {
+      setIsProcessingCheckIn(false);
+      setScannedResult(data);
+      setCheckInFeedback({
+        type: 'error',
+        message: err.message || 'Auto check-in failed.',
+      });
+    }
+  };
+
+  // Handle whenever a QR payload is detected
+  const handleDecodedPass = (parsed: DecodedScanData) => {
+    stopCamera();
+
+    // Haptic vibration feedback
+    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+      navigator.vibrate(80);
+    }
+
+    if (quickCheckInMode) {
+      // ⚡ Bypasses manual ceremony selection flow and instantly admits for all events!
+      executeInstantQuickAdmit(parsed);
+    } else {
+      setScannedResult(parsed);
     }
   };
 
@@ -245,13 +336,7 @@ export const AdminQrScannerModal: React.FC<AdminQrScannerModalProps> = ({
       if (code && code.data && code.data.trim().length > 0) {
         const parsed = parseQrContent(code.data);
         if (parsed) {
-          // Play haptic feedback if available on mobile
-          if (typeof navigator !== 'undefined' && navigator.vibrate) {
-            navigator.vibrate(80);
-          }
-
-          setScannedResult(parsed);
-          stopCamera();
+          handleDecodedPass(parsed);
           return;
         }
       }
@@ -284,8 +369,7 @@ export const AdminQrScannerModal: React.FC<AdminQrScannerModalProps> = ({
         if (code && code.data) {
           const parsed = parseQrContent(code.data);
           if (parsed) {
-            setScannedResult(parsed);
-            stopCamera();
+            handleDecodedPass(parsed);
           } else {
             setCheckInFeedback({
               type: 'error',
@@ -304,7 +388,7 @@ export const AdminQrScannerModal: React.FC<AdminQrScannerModalProps> = ({
     reader.readAsDataURL(file);
   };
 
-  // Execute check-in for specific ceremony
+  // Manual check-in for specific ceremony or all
   const handlePerformCheckIn = async (eventName?: string, checkInAll = false) => {
     if (!scannedResult) return;
     setIsProcessingCheckIn(true);
@@ -330,6 +414,7 @@ export const AdminQrScannerModal: React.FC<AdminQrScannerModalProps> = ({
                 ...prev,
                 matchedRecord: res.record,
                 checkedInMap: res.record.checked_in_events_map || {},
+                autoAdmitted: checkInAll || prev.autoAdmitted,
               }
             : null
         );
@@ -337,15 +422,15 @@ export const AdminQrScannerModal: React.FC<AdminQrScannerModalProps> = ({
         setCheckInFeedback({
           type: 'success',
           message: checkInAll
-            ? `✅ ${scannedResult.guestName} admitted for ALL functions!`
+            ? `⚡ ${scannedResult.guestName} admitted for ALL functions!`
             : `✅ Admitted to "${targetEvent}" (${scannedResult.guestCount} heads)!`,
         });
 
         confetti({
-          particleCount: 70,
-          spread: 70,
+          particleCount: 75,
+          spread: 75,
           origin: { y: 0.4 },
-          colors: ['#10b981', '#c5a059', '#1b4332'],
+          colors: ['#10b981', '#c5a059', '#1b4332', '#e4c88a'],
         });
 
         if (onCheckInSuccess) {
@@ -387,30 +472,47 @@ export const AdminQrScannerModal: React.FC<AdminQrScannerModalProps> = ({
   return (
     <div className="fixed inset-0 z-60 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md animate-fade-in overflow-y-auto">
       <div className="relative w-full max-w-lg bg-gradient-to-b from-[#fdfbf7] via-[#faf5ed] to-[#f4eee4] border-2 border-emerald-600 rounded-3xl p-5 sm:p-7 shadow-2xl text-center space-y-4 max-h-[94vh] flex flex-col my-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-gold-soft/40 pb-3 shrink-0">
-          <div className="flex items-center gap-2.5 text-left">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-700 to-[#1b4332] text-white flex items-center justify-center shadow-md">
+        {/* Header with Title and Quick Check-In Mode Toggle */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-gold-soft/40 pb-3 gap-2.5 shrink-0 text-left">
+          <div className="flex items-center gap-2.5">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-700 to-[#1b4332] text-white flex items-center justify-center shadow-md shrink-0">
               <QrCode className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-cinzel text-base sm:text-lg font-bold text-emerald-950 uppercase">
-                Admin QR Scanner &amp; Google Lens
+              <h3 className="font-cinzel text-base sm:text-lg font-bold text-emerald-950 uppercase leading-tight">
+                Host Gate Scanner
               </h3>
-              <p className="font-serif-display text-xs text-foreground/70 italic">
-                Scan guest VIP passes for instant gate check-in &amp; Excel sync
+              <p className="font-serif-display text-[11px] text-foreground/70 italic">
+                Google Lens &amp; QR Live Verification Desk
               </p>
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-2 rounded-full bg-stone-200/80 hover:bg-stone-300 text-stone-700 transition-colors cursor-pointer"
-            aria-label="Close scanner"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center justify-between sm:justify-end gap-2">
+            {/* Quick Check-In Mode Pill Button */}
+            <button
+              type="button"
+              onClick={toggleQuickMode}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full font-cinzel text-[11px] font-bold uppercase tracking-wider transition-all cursor-pointer border shadow-xs ${
+                quickCheckInMode
+                  ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-stone-950 border-amber-300 ring-2 ring-amber-400/40 shadow-amber-500/20'
+                  : 'bg-stone-100 text-stone-600 border-stone-300 hover:bg-stone-200'
+              }`}
+              title="When ON: scanning immediately admits the guest for ALL ceremonies in 1 tap without extra steps."
+            >
+              <Zap className={`w-3.5 h-3.5 ${quickCheckInMode ? 'fill-amber-950 text-amber-950 animate-bounce' : 'text-stone-500'}`} />
+              <span>Quick Check-In: {quickCheckInMode ? 'ON ⚡' : 'OFF'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-1.5 rounded-full bg-stone-200/80 hover:bg-stone-300 text-stone-700 transition-colors cursor-pointer shrink-0"
+              aria-label="Close scanner"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Hidden File Inputs */}
@@ -444,7 +546,31 @@ export const AdminQrScannerModal: React.FC<AdminQrScannerModalProps> = ({
         <div className="overflow-y-auto space-y-4">
           {!scannedResult ? (
             /* CAMERA SCANNING VIEW */
-            <div className="space-y-4">
+            <div className="space-y-3.5">
+              {/* Quick Mode Status Banner */}
+              {quickCheckInMode ? (
+                <div className="bg-gradient-to-r from-amber-50 via-amber-100/90 to-amber-50 border border-amber-300 rounded-xl p-2 px-3 flex items-center justify-between text-left">
+                  <div className="flex items-center gap-1.5">
+                    <Zap className="w-4 h-4 text-amber-700 fill-amber-700 shrink-0" />
+                    <span className="font-cinzel text-[11px] font-bold text-amber-950 uppercase">
+                      Quick Check-In Active
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-serif-display text-amber-900 italic">
+                    Auto-admits for all ceremonies on scan
+                  </span>
+                </div>
+              ) : (
+                <div className="bg-stone-100 border border-stone-300/80 rounded-xl p-2 px-3 flex items-center justify-between text-left">
+                  <span className="font-cinzel text-[11px] font-bold text-stone-700 uppercase">
+                    Manual Selection Mode
+                  </span>
+                  <span className="text-[10px] font-serif-display text-stone-600 italic">
+                    Choose individual ceremony after scan
+                  </span>
+                </div>
+              )}
+
               {/* Viewfinder Frame */}
               <div className="relative w-full aspect-square max-w-[340px] mx-auto rounded-2xl overflow-hidden bg-black border-2 border-emerald-600 shadow-lg">
                 <video
@@ -522,7 +648,7 @@ export const AdminQrScannerModal: React.FC<AdminQrScannerModalProps> = ({
                     className="w-full py-3 px-3 rounded-xl bg-gradient-to-r from-blue-700 via-indigo-700 to-blue-800 hover:brightness-110 text-white font-cinzel text-xs font-bold uppercase tracking-wider transition-all shadow-md cursor-pointer flex items-center justify-center gap-2"
                   >
                     <span className="text-base">📷</span>
-                    <span>Open Phone Camera / Lens</span>
+                    <span>Open Camera / Google Lens</span>
                   </button>
 
                   {/* Upload / Gallery Image */}
@@ -537,15 +663,15 @@ export const AdminQrScannerModal: React.FC<AdminQrScannerModalProps> = ({
                 </div>
 
                 <p className="text-[11px] font-serif-display text-foreground/70 italic text-center">
-                  Point at guest's phone screen or printed card to scan their VIP QR code automatically.
+                  Point at guest's phone screen or printed card to scan their VIP QR code.
                 </p>
               </div>
             </div>
           ) : (
             /* SCANNED GUEST RESULT & ADMISSION ACTIONS */
-            <div className="space-y-4 text-left animate-fade-in">
-              {/* Badge & Guest Overview */}
-              <div className="bg-white/95 rounded-2xl p-4 border-2 border-emerald-600/70 shadow-md space-y-3">
+            <div className="space-y-3.5 text-left animate-fade-in">
+              {/* Badge & Guest Overview Card */}
+              <div className="bg-white/95 rounded-2xl p-4 border-2 border-emerald-600/70 shadow-md space-y-2.5">
                 <div className="flex items-center justify-between border-b border-gold-soft/30 pb-2">
                   <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-emerald-100 text-emerald-900 border border-emerald-400 font-cinzel text-[11px] font-bold uppercase">
                     <span>✓ VIP Pass Verified</span>
@@ -556,11 +682,11 @@ export const AdminQrScannerModal: React.FC<AdminQrScannerModalProps> = ({
                 </div>
 
                 <div>
-                  <h4 className="font-cinzel text-xl font-bold text-emerald-950 uppercase">
+                  <h4 className="font-cinzel text-xl sm:text-2xl font-bold text-emerald-950 uppercase">
                     {scannedResult.guestName}
                   </h4>
                   <div className="flex items-center gap-3 text-xs font-serif-display text-foreground/80 mt-1">
-                    <span className="font-semibold text-emerald-900">
+                    <span className="font-bold text-emerald-900">
                       👥 {scannedResult.guestCount} {scannedResult.guestCount === 1 ? 'Guest' : 'Guests'} Admitted
                     </span>
                     <span>•</span>
@@ -571,7 +697,7 @@ export const AdminQrScannerModal: React.FC<AdminQrScannerModalProps> = ({
                 </div>
               </div>
 
-              {/* Check-In Feedback Alert */}
+              {/* Instant Check-In Feedback Alert */}
               {checkInFeedback.message && (
                 <div
                   className={`p-3 rounded-xl border text-xs font-cinzel font-bold flex items-center gap-2 ${
@@ -580,18 +706,47 @@ export const AdminQrScannerModal: React.FC<AdminQrScannerModalProps> = ({
                       : 'bg-rose-100 border-rose-400 text-rose-950'
                   }`}
                 >
-                  <span>{checkInFeedback.type === 'success' ? '🎉' : '⚠️'}</span>
+                  <span className="text-base">{checkInFeedback.type === 'success' ? '⚡' : '⚠️'}</span>
                   <span>{checkInFeedback.message}</span>
                 </div>
               )}
 
-              {/* Ceremony Admission Actions */}
-              <div className="space-y-2">
-                <span className="font-cinzel text-xs text-foreground/70 uppercase font-bold tracking-wider block px-1">
-                  Select Ceremony to Admit:
-                </span>
+              {/* ⚡ ONE-TAP HERO QUICK ADMIT BUTTON */}
+              <div className="p-3.5 rounded-2xl bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 border-2 border-amber-600 shadow-md text-stone-950 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 font-cinzel text-xs font-bold uppercase tracking-wide">
+                    <Zap className="w-4 h-4 fill-stone-950" />
+                    <span>Quick Check-In (1-Tap)</span>
+                  </div>
+                  <span className="text-[10px] font-cinzel font-semibold bg-stone-950 text-amber-300 px-2 py-0.5 rounded-full">
+                    Fastest
+                  </span>
+                </div>
 
-                <div className="space-y-2">
+                <button
+                  type="button"
+                  disabled={isProcessingCheckIn}
+                  onClick={() => handlePerformCheckIn(undefined, true)}
+                  className="w-full py-3 px-4 rounded-xl bg-stone-950 hover:bg-stone-900 text-white font-cinzel text-xs sm:text-sm font-bold uppercase tracking-wider transition-all shadow-md cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50 hover:scale-[1.01] active:scale-[0.99]"
+                >
+                  <Zap className="w-4 h-4 text-amber-400 fill-amber-400" />
+                  <span>
+                    {isProcessingCheckIn
+                      ? 'Recording All Functions...'
+                      : `⚡ Instantly Admit for All ${scannedResult.events.length} Events`}
+                  </span>
+                </button>
+              </div>
+
+              {/* Granular Ceremony Admission List */}
+              <div className="space-y-2 pt-1">
+                <div className="flex items-center justify-between px-1">
+                  <span className="font-cinzel text-[11px] text-foreground/70 uppercase font-bold tracking-wider">
+                    Or Select Specific Ceremony:
+                  </span>
+                </div>
+
+                <div className="space-y-1.5">
                   {scannedResult.events.map((rawEv, idx) => {
                     const normName = normalizeEventName(rawEv);
                     const isCheckedIn = Boolean(
@@ -605,7 +760,7 @@ export const AdminQrScannerModal: React.FC<AdminQrScannerModalProps> = ({
                     return (
                       <div
                         key={idx}
-                        className={`p-3.5 rounded-2xl border-2 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 ${
+                        className={`p-3 rounded-xl border-2 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-2 ${
                           isCheckedIn
                             ? 'bg-emerald-50/90 border-emerald-400'
                             : 'bg-white/95 border-gold-soft/80 hover:border-emerald-600 shadow-2xs'
@@ -633,7 +788,7 @@ export const AdminQrScannerModal: React.FC<AdminQrScannerModalProps> = ({
 
                         <div className="shrink-0 pl-4.5 sm:pl-0">
                           {isCheckedIn ? (
-                            <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-[11px] font-cinzel font-bold uppercase bg-emerald-700 text-white">
+                            <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-[10px] font-cinzel font-bold uppercase bg-emerald-700 text-white">
                               <span>Admitted ✓</span>
                             </span>
                           ) : (
@@ -641,9 +796,9 @@ export const AdminQrScannerModal: React.FC<AdminQrScannerModalProps> = ({
                               type="button"
                               disabled={isProcessingCheckIn}
                               onClick={() => handlePerformCheckIn(rawEv)}
-                              className="w-full sm:w-auto px-4 py-2 rounded-xl text-xs font-cinzel font-bold uppercase tracking-wider bg-gradient-to-r from-emerald-800 to-[#1b4332] hover:brightness-110 text-white shadow-md cursor-pointer transition-all hover:scale-102 active:scale-98 disabled:opacity-50"
+                              className="w-full sm:w-auto px-3.5 py-1.5 rounded-lg text-xs font-cinzel font-bold uppercase tracking-wider bg-gradient-to-r from-emerald-800 to-[#1b4332] hover:brightness-110 text-white shadow-xs cursor-pointer transition-all hover:scale-102 active:scale-98 disabled:opacity-50"
                             >
-                              <span>✨ Check In &amp; Admit</span>
+                              <span>Admit Event</span>
                             </button>
                           )}
                         </div>
@@ -653,38 +808,24 @@ export const AdminQrScannerModal: React.FC<AdminQrScannerModalProps> = ({
                 </div>
               </div>
 
-              {/* Action Buttons: Check In All / Scan Next */}
-              <div className="space-y-2 pt-2">
-                {scannedResult.events.length > 1 && (
-                  <button
-                    type="button"
-                    disabled={isProcessingCheckIn}
-                    onClick={() => handlePerformCheckIn(undefined, true)}
-                    className="w-full py-3 px-4 rounded-xl bg-amber-100 hover:bg-amber-200 text-amber-950 border border-amber-300 font-cinzel text-xs font-bold uppercase tracking-wider transition-all cursor-pointer shadow-xs disabled:opacity-50 flex items-center justify-center gap-2"
-                  >
-                    <span>🎟️</span>
-                    <span>Admit for All {scannedResult.events.length} Ceremonies</span>
-                  </button>
-                )}
+              {/* Navigation & Reset for Next Scan */}
+              <div className="grid grid-cols-2 gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={handleScanNext}
+                  className="py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-800 to-[#1b4332] hover:brightness-110 text-white font-cinzel text-xs font-bold uppercase tracking-wider transition-all shadow-md cursor-pointer flex items-center justify-center gap-1.5 hover:scale-102 active:scale-98"
+                >
+                  <RefreshCw className="w-4 h-4 animate-spin-hover" />
+                  <span>⚡ Scan Next Guest</span>
+                </button>
 
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={handleScanNext}
-                    className="py-3 px-4 rounded-xl bg-emerald-800 hover:bg-emerald-900 text-white font-cinzel text-xs font-bold uppercase tracking-wider transition-all shadow-md cursor-pointer flex items-center justify-center gap-1.5"
-                  >
-                    <RefreshCw className="w-4 h-4" />
-                    <span>Scan Next Guest</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={onClose}
-                    className="py-3 px-4 rounded-xl border border-stone-300 text-stone-700 font-cinzel text-xs font-bold uppercase tracking-wider hover:bg-stone-100 transition-all cursor-pointer flex items-center justify-center gap-1.5"
-                  >
-                    <span>Done</span>
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="py-3 px-4 rounded-xl border border-stone-300 text-stone-700 font-cinzel text-xs font-bold uppercase tracking-wider hover:bg-stone-100 transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  <span>Done</span>
+                </button>
               </div>
             </div>
           )}
