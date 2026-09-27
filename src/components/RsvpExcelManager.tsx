@@ -62,6 +62,7 @@ import {
   generatePassId,
   CheckInPassData,
 } from './GuestCheckInPass';
+import { AdminQrScannerModal } from './AdminQrScannerModal';
 
 export interface SavedGuestInvite {
   id: string;
@@ -108,6 +109,7 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
   const [inviteSearch, setInviteSearch] = useState('');
   const [selectedCardImageId, setSelectedCardImageId] = useState<string>('auto');
   const [viewPassGuest, setViewPassGuest] = useState<CheckInPassData | null>(null);
+  const [showScannerModal, setShowScannerModal] = useState<boolean>(false);
 
   const resolveActiveCard = (
     functionIds: number[],
@@ -683,6 +685,16 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
                 className="hidden"
                 aria-label="Upload Excel File"
               />
+
+              {/* Scanner Button */}
+              <button
+                type="button"
+                onClick={() => setShowScannerModal(true)}
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-blue-700 via-indigo-700 to-[#1b4332] hover:brightness-110 text-white font-cinzel text-xs uppercase font-bold tracking-wider shadow-md transition-all cursor-pointer border border-blue-400/50"
+              >
+                <QrCode className="w-4 h-4 text-amber-300" />
+                <span>Scan QR / Google Lens</span>
+              </button>
 
               <button
                 type="button"
@@ -1862,6 +1874,15 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
           </div>
         </div>
       )}
+
+      {/* Admin Live QR & Google Lens Scanner Modal */}
+      <AdminQrScannerModal
+        isOpen={showScannerModal}
+        onClose={() => setShowScannerModal(false)}
+        onCheckInSuccess={() => {
+          loadData();
+        }}
+      />
     </div>
   );
 };

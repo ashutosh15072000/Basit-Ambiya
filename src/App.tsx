@@ -18,6 +18,7 @@ import { AnimatedSection } from './components/AnimatedSection';
 import { FloatingRsvpButton } from './components/FloatingRsvpButton';
 import { InvitationPageCard } from './components/InvitationPageCard';
 import { RsvpExcelManager } from './components/RsvpExcelManager';
+import { AdminQrScannerModal } from './components/AdminQrScannerModal';
 import {
   recordGuestCheckIn,
   toggleGuestEventCheckIn,
@@ -178,6 +179,7 @@ export default function App() {
   const [showUsherPinModal, setShowUsherPinModal] = useState(false);
   const [usherPinInput, setUsherPinInput] = useState('');
   const [usherPinError, setUsherPinError] = useState<string | null>(null);
+  const [showHostScanner, setShowHostScanner] = useState<boolean>(false);
 
   const handleUnlockUsherDesk = (e: React.FormEvent) => {
     e.preventDefault();
@@ -860,6 +862,18 @@ export default function App() {
 
               {/* Action Buttons */}
               <div className="flex flex-col gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCheckInScanInfo(null);
+                    setShowHostScanner(true);
+                  }}
+                  className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-blue-700 via-indigo-700 to-[#1b4332] hover:brightness-110 text-white font-cinzel text-[11px] font-bold uppercase tracking-wider transition-all shadow-md cursor-pointer flex items-center justify-center gap-2"
+                >
+                  <span className="text-base">📷</span>
+                  <span>Scan Next Guest / Google Lens</span>
+                </button>
+
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {checkInScanInfo.events.length > 1 && (
                     <button
@@ -1145,6 +1159,12 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* Admin QR & Google Lens Scanner Modal */}
+      <AdminQrScannerModal
+        isOpen={showHostScanner}
+        onClose={() => setShowHostScanner(false)}
+      />
     </div>
   );
 }
