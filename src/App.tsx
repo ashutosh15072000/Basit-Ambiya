@@ -947,6 +947,16 @@ export default function App() {
           ) : (
             /* 2. GUEST VERIFICATION & DIGITAL PASS VIEW (No Self Check-In) */
             <div className="relative w-full max-w-lg bg-gradient-to-b from-[#fdfbf7] via-[#faf5ed] to-[#f4eee4] border-2 border-gold rounded-3xl p-5 sm:p-7 shadow-2xl text-center space-y-4 max-h-[92vh] overflow-y-auto">
+              {/* Close Button */}
+              <button
+                type="button"
+                onClick={() => setCheckInScanInfo(null)}
+                className="absolute top-4 right-4 w-8 h-8 rounded-full bg-stone-200/80 hover:bg-stone-300 text-stone-700 flex items-center justify-center transition-colors cursor-pointer shadow-xs z-10"
+                aria-label="Close"
+              >
+                ✕
+              </button>
+
               {/* Header Badge */}
               <div className="w-14 h-14 rounded-full bg-gradient-to-br from-[#c5a059] to-[#8c6b2d] text-white flex items-center justify-center mx-auto shadow-lg border-2 border-[#e4c88a]">
                 <span className="text-2xl font-bold">👑</span>
@@ -1106,26 +1116,6 @@ export default function App() {
                 <p className="text-amber-900/90 leading-relaxed text-[11px]">
                   Please present this pass on your phone upon arrival at the venue. Gate ushers and hosts will scan and process your entry check-in.
                 </p>
-              </div>
-
-              {/* Guest Action Buttons */}
-              <div className="flex flex-col gap-2 pt-1">
-                <button
-                  type="button"
-                  onClick={() => setCheckInScanInfo(null)}
-                  className="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-800 to-[#1b4332] hover:brightness-110 text-white font-cinzel text-xs font-bold uppercase tracking-wider transition-all shadow-md cursor-pointer"
-                >
-                  Proceed to Wedding Invitation
-                </button>
-
-                {/* Subtle Gate Staff Login */}
-                <button
-                  type="button"
-                  onClick={() => setShowUsherPinModal(true)}
-                  className="text-stone-500 hover:text-stone-800 font-cinzel text-[11px] underline pt-1 cursor-pointer"
-                >
-                  🔐 Gate Usher / Host Check-In Desk Login
-                </button>
               </div>
             </div>
           )}
