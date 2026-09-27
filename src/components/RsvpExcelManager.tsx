@@ -41,6 +41,8 @@ import {
   deleteRsvpEntry,
   getGitHubConfig,
   saveGitHubConfig,
+  sanitizeGitHubConfig,
+  testGitHubConnection,
   GitHubSyncConfig,
   toggleGuestCheckInStatus,
   toggleGuestEventCheckIn,
@@ -99,6 +101,11 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
     type: 'success' | 'error' | null;
     message: string;
     commitUrl?: string;
+  }>({ type: null, message: '' });
+  const [isTestingConnection, setIsTestingConnection] = useState(false);
+  const [testFeedback, setTestFeedback] = useState<{
+    type: 'success' | 'error' | null;
+    message: string;
   }>({ type: null, message: '' });
 
   // Guest Invite Link Generator State
@@ -553,12 +560,32 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
 
   const handleSaveSettings = (e: React.FormEvent) => {
     e.preventDefault();
-    saveGitHubConfig(ghConfig);
+    const sanitized = sanitizeGitHubConfig(ghConfig);
+    saveGitHubConfig(sanitized);
+    setGhConfig(sanitized);
     setShowSettings(false);
     setSyncFeedback({
       type: 'success',
       message: 'GitHub settings saved successfully!',
     });
+  };
+
+  const handleTestConnection = async () => {
+    setIsTestingConnection(true);
+    setTestFeedback({ type: null, message: '' });
+    const result = await testGitHubConnection(ghConfig);
+    setIsTestingConnection(false);
+    if (result.success) {
+      setTestFeedback({
+        type: 'success',
+        message: result.message,
+      });
+    } else {
+      setTestFeedback({
+        type: 'error',
+        message: result.message,
+      });
+    }
   };
 
   const handleSyncToGitHub = async () => {
@@ -1033,13 +1060,44 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
                     placeholder="ghp_xxxxxxxxxxxxxxxxxxxx (Requires 'repo' or 'contents:write' permission)"
                     className="w-full px-3 py-2 text-sm bg-[#faf8f5] border border-gold-soft/80 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-[#1b4332]"
                   />
-                  <p className="text-[11px] text-foreground/60 mt-1">
-                    Create a token in GitHub Settings ➔ Developer Settings ➔ Personal Access Tokens (Classic or Fine-grained with Repository Contents Write permission).
-                  </p>
+                  <div className="flex items-center justify-between mt-1.5 flex-wrap gap-2">
+                    <p className="text-[11px] text-foreground/60">
+                      Requires <strong>repo</strong> (Classic PAT) or <strong>Contents: Read &amp; write</strong> (Fine-grained).
+                    </p>
+                    <a
+                      href="https://github.com/settings/tokens/new?scopes=repo&description=Basit+Ambiya+Wedding+RSVP+Excel+Sync"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-[11px] font-cinzel font-bold text-emerald-800 hover:text-emerald-950 underline"
+                    >
+                      <span>Generate Token on GitHub</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  </div>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 pt-2">
+              {/* Test Connection Feedback Banner */}
+              {testFeedback.type && (
+                <div
+                  className={`p-3 rounded-xl border text-xs flex items-start gap-2 animate-fade-in ${
+                    testFeedback.type === 'success'
+                      ? 'bg-emerald-50 border-emerald-300 text-emerald-900'
+                      : 'bg-rose-50 border-rose-300 text-rose-900'
+                  }`}
+                >
+                  {testFeedback.type === 'success' ? (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                  )}
+                  <div className="flex-1 font-serif-display font-medium">
+                    {testFeedback.message}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex items-center gap-2 pt-1">
                 <input
                   type="checkbox"
                   id="autoSyncCheck"
@@ -1052,20 +1110,36 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
                 </label>
               </div>
 
-              <div className="flex items-center justify-end gap-3 pt-2">
+              <div className="flex items-center justify-between gap-3 pt-2 border-t border-gold-soft/30">
                 <button
                   type="button"
-                  onClick={() => setShowSettings(false)}
-                  className="px-4 py-2 text-xs font-cinzel font-bold text-foreground/70 hover:text-foreground"
+                  onClick={handleTestConnection}
+                  disabled={isTestingConnection}
+                  className="px-4 py-2 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-800 font-cinzel text-xs font-bold uppercase tracking-wider transition-all border border-stone-300 cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
                 >
-                  Cancel
+                  {isTestingConnection ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-800" />
+                  ) : (
+                    <RefreshCw className="w-3.5 h-3.5 text-emerald-800" />
+                  )}
+                  <span>{isTestingConnection ? 'Testing...' : 'Test Connection'}</span>
                 </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 rounded-lg bg-[#1b4332] hover:bg-[#163828] text-white font-cinzel text-xs font-bold uppercase tracking-wider"
-                >
-                  Save GitHub Settings
-                </button>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowSettings(false)}
+                    className="px-4 py-2 text-xs font-cinzel font-bold text-foreground/70 hover:text-foreground cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 rounded-lg bg-[#1b4332] hover:bg-[#163828] text-white font-cinzel text-xs font-bold uppercase tracking-wider cursor-pointer shadow-md"
+                  >
+                    Save GitHub Settings
+                  </button>
+                </div>
               </div>
             </form>
           )}

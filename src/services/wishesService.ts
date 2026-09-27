@@ -1,5 +1,5 @@
 import { getAssetPath } from '../utils/assets';
-import { getGitHubConfig, GitHubSyncConfig } from './rsvpExcelService';
+import { getGitHubConfig, sanitizeGitHubConfig, GitHubSyncConfig } from './rsvpExcelService';
 
 export interface WeddingWish {
   id: string;
@@ -297,7 +297,8 @@ export async function pushWishesToGitHub(
   wishes: WeddingWish[],
   configOverride?: Partial<GitHubSyncConfig>
 ): Promise<{ success: boolean; message: string; commitUrl?: string }> {
-  const config = { ...getGitHubConfig(), ...(configOverride || {}) };
+  const rawConfig = { ...getGitHubConfig(), ...(configOverride || {}) };
+  const config = sanitizeGitHubConfig(rawConfig);
 
   if (!config.owner || !config.repo || !config.token) {
     return {
@@ -306,9 +307,9 @@ export async function pushWishesToGitHub(
     };
   }
 
-  const cleanOwner = config.owner.trim();
-  const cleanRepo = config.repo.trim();
-  const cleanToken = config.token.trim();
+  const cleanOwner = config.owner;
+  const cleanRepo = config.repo;
+  const cleanToken = config.token;
   const branch = config.branch || 'main';
 
   const jsonContent = JSON.stringify(wishes, null, 2);
@@ -328,7 +329,8 @@ export async function pushWishesToGitHub(
           {
             headers: {
               Authorization: `Bearer ${cleanToken}`,
-              Accept: 'application/vnd.github.v3+json',
+              Accept: 'application/vnd.github+json',
+              'X-GitHub-Api-Version': '2022-11-28',
             },
           }
         );
@@ -352,7 +354,8 @@ export async function pushWishesToGitHub(
           method: 'PUT',
           headers: {
             Authorization: `Bearer ${cleanToken}`,
-            Accept: 'application/vnd.github.v3+json',
+            Accept: 'application/vnd.github+json',
+            'X-GitHub-Api-Version': '2022-11-28',
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({

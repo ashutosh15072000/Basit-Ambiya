@@ -170,13 +170,128 @@ export function saveAllRsvps(rsvps: RsvpRecord[]): void {
 }
 
 /**
+ * Sanitizes GitHub input fields to avoid common formatting mistakes (URL pastes, extra slashes, etc.)
+ */
+export function sanitizeGitHubConfig(cfg: Partial<GitHubSyncConfig>): GitHubSyncConfig {
+  let owner = (cfg.owner || '').trim();
+  owner = owner.replace(/^https?:\/\/github\.com\//i, '').replace(/^github\.com\//i, '');
+  if (owner.includes('/')) {
+    owner = owner.split('/')[0];
+  }
+  owner = owner.replace(/\/+$/, '').trim();
+
+  let repo = (cfg.repo || '').trim();
+  repo = repo.replace(/^https?:\/\/github\.com\//i, '').replace(/^github\.com\//i, '');
+  if (repo.includes('/')) {
+    const parts = repo.split('/');
+    repo = parts[parts.length - 1];
+  }
+  repo = repo.replace(/\.git$/i, '').replace(/\/+$/, '').trim();
+
+  let token = (cfg.token || '').trim();
+  token = token.replace(/^bearer\s+/i, '').replace(/^token\s+/i, '').trim();
+
+  let branch = (cfg.branch || '').trim() || 'main';
+  let filePath = (cfg.filePath || '').trim().replace(/^\/+/, '') || 'wedding-rsvps.xlsx';
+
+  return {
+    enabled: cfg.enabled !== undefined ? cfg.enabled : Boolean(token && owner && repo),
+    owner,
+    repo,
+    branch,
+    filePath,
+    token,
+    autoSyncOnSubmit: cfg.autoSyncOnSubmit !== undefined ? cfg.autoSyncOnSubmit : true,
+    lastSyncedAt: cfg.lastSyncedAt,
+    lastCommitUrl: cfg.lastCommitUrl,
+  };
+}
+
+/**
+ * Tests connection to GitHub repository and checks credentials & permissions
+ */
+export async function testGitHubConnection(rawConfig: GitHubSyncConfig): Promise<{
+  success: boolean;
+  message: string;
+  repoDetails?: {
+    full_name: string;
+    private: boolean;
+    default_branch: string;
+  };
+}> {
+  const config = sanitizeGitHubConfig(rawConfig);
+  if (!config.token || !config.owner || !config.repo) {
+    return {
+      success: false,
+      message: 'Please provide GitHub Username/Org, Repository Name, and Personal Access Token (PAT).',
+    };
+  }
+
+  try {
+    const res = await fetch(`https://api.github.com/repos/${config.owner}/${config.repo}`, {
+      headers: {
+        Authorization: `Bearer ${config.token}`,
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
+    });
+
+    if (res.status === 401) {
+      return {
+        success: false,
+        message: 'Invalid Personal Access Token (401 Unauthorized). Please check or regenerate your token with "repo" or "contents:write" permission.',
+      };
+    }
+
+    if (res.status === 404) {
+      return {
+        success: false,
+        message: `Repository "${config.owner}/${config.repo}" was not found (404). Please ensure the repository name is exact and exists on your GitHub account.`,
+      };
+    }
+
+    if (res.status === 403) {
+      const errJson = (await res.json().catch(() => ({}))) as any;
+      return {
+        success: false,
+        message: `Access Forbidden (403): ${errJson.message || 'Token lacks sufficient repository permissions. Ensure it has "repo" (Classic) or "Contents: Read and write" (Fine-Grained).'}`,
+      };
+    }
+
+    if (!res.ok) {
+      const errJson = (await res.json().catch(() => ({}))) as any;
+      return {
+        success: false,
+        message: `GitHub Error (${res.status}): ${errJson.message || 'Unable to connect to repository.'}`,
+      };
+    }
+
+    const repoData = (await res.json()) as any;
+    return {
+      success: true,
+      message: `Connection successful! Connected to "${repoData.full_name}" (${repoData.private ? 'Private' : 'Public'}, default branch: ${repoData.default_branch || 'main'}).`,
+      repoDetails: {
+        full_name: repoData.full_name,
+        private: repoData.private,
+        default_branch: repoData.default_branch || 'main',
+      },
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      message: `Network error connecting to GitHub: ${err.message || 'Check your internet connection.'}`,
+    };
+  }
+}
+
+/**
  * Retrieves stored GitHub sync settings
  */
 export function getGitHubConfig(): GitHubSyncConfig {
   let config: GitHubSyncConfig = {
     ...DEFAULT_GH_CONFIG,
-    owner: (import.meta as any).env?.VITE_GITHUB_OWNER || 'ashutoshs019',
-    repo: (import.meta as any).env?.VITE_GITHUB_REPO || 'wedding-invitation',
+    owner: (import.meta as any).env?.VITE_GITHUB_OWNER || '',
+    repo: (import.meta as any).env?.VITE_GITHUB_REPO || '',
     branch: (import.meta as any).env?.VITE_GITHUB_BRANCH || 'main',
     token: (import.meta as any).env?.VITE_GITHUB_TOKEN || '',
     enabled: Boolean((import.meta as any).env?.VITE_GITHUB_TOKEN),
@@ -213,7 +328,7 @@ export function getGitHubConfig(): GitHubSyncConfig {
     } catch {}
   }
 
-  return config;
+  return sanitizeGitHubConfig(config);
 }
 
 /**
@@ -221,7 +336,8 @@ export function getGitHubConfig(): GitHubSyncConfig {
  */
 export function saveGitHubConfig(config: GitHubSyncConfig): void {
   try {
-    localStorage.setItem(STORAGE_KEY_GH_CONFIG, JSON.stringify(config));
+    const sanitized = sanitizeGitHubConfig(config);
+    localStorage.setItem(STORAGE_KEY_GH_CONFIG, JSON.stringify(sanitized));
   } catch (err) {
     console.error('Error saving github config:', err);
   }
@@ -669,8 +785,9 @@ export async function toggleGuestCheckInStatus(recordId: string): Promise<{
  */
 export async function pushExcelToGitHub(
   records: RsvpRecord[],
-  config: GitHubSyncConfig
+  rawConfig: GitHubSyncConfig
 ): Promise<{ success: boolean; message: string; commitUrl?: string }> {
+  const config = sanitizeGitHubConfig(rawConfig);
   if (!config.token || !config.owner || !config.repo) {
     return {
       success: false,
@@ -680,7 +797,7 @@ export async function pushExcelToGitHub(
 
   const base64Content = generateExcelBase64(records);
   const filePath = config.filePath || 'wedding-rsvps.xlsx';
-  const branch = config.branch || 'main';
+  let branch = config.branch || 'main';
   const apiUrl = `https://api.github.com/repos/${config.owner}/${config.repo}/contents/${filePath}`;
 
   let existingSha: string | undefined = undefined;
@@ -688,18 +805,56 @@ export async function pushExcelToGitHub(
     const getRes = await fetch(`${apiUrl}?ref=${branch}`, {
       headers: {
         Authorization: `Bearer ${config.token}`,
-        Accept: 'application/vnd.github.v3+json',
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
       },
     });
+
     if (getRes.ok) {
       const data = (await getRes.json()) as any;
       existingSha = data.sha;
+    } else if (getRes.status === 401) {
+      return {
+        success: false,
+        message: 'Invalid Personal Access Token (401 Unauthorized). Please check your GitHub token.',
+      };
+    } else if (getRes.status === 404) {
+      // Check if branch exists, or if 'main' / 'master' fallback is needed
+      const branchRes = await fetch(`https://api.github.com/repos/${config.owner}/${config.repo}/branches/${branch}`, {
+        headers: {
+          Authorization: `Bearer ${config.token}`,
+          Accept: 'application/vnd.github+json',
+          'X-GitHub-Api-Version': '2022-11-28',
+        },
+      }).catch(() => null);
+
+      if (branchRes && branchRes.status === 404) {
+        const altBranch = branch === 'main' ? 'master' : 'main';
+        const altRes = await fetch(`https://api.github.com/repos/${config.owner}/${config.repo}/branches/${altBranch}`, {
+          headers: {
+            Authorization: `Bearer ${config.token}`,
+            Accept: 'application/vnd.github+json',
+            'X-GitHub-Api-Version': '2022-11-28',
+          },
+        }).catch(() => null);
+
+        if (altRes && altRes.ok) {
+          branch = altBranch;
+          config.branch = altBranch;
+          saveGitHubConfig(config);
+        }
+      }
     }
-  } catch {
+  } catch (e) {
     // If not found, will create new file
   }
 
-  const timestamp = new Date().toLocaleString();
+  const timestamp = new Date().toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
   const checkedInCount = records.filter((r) => r.checked_in).length;
   const commitMessage = existingSha
     ? `Update RSVP & Multi-Function Check-In sheet (${records.length} RSVPs, ${checkedInCount} Checked-In) [${timestamp}]`
@@ -719,7 +874,8 @@ export async function pushExcelToGitHub(
       method: 'PUT',
       headers: {
         Authorization: `Bearer ${config.token}`,
-        Accept: 'application/vnd.github.v3+json',
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(payload),
@@ -727,7 +883,17 @@ export async function pushExcelToGitHub(
 
     if (!putRes.ok) {
       const errJson = (await putRes.json().catch(() => ({}))) as any;
-      throw new Error(errJson.message || `GitHub API error: HTTP ${putRes.status}`);
+      let errorMsg = errJson.message || `GitHub API error: HTTP ${putRes.status}`;
+      if (putRes.status === 401) {
+        errorMsg = 'GitHub Token unauthorized (401). Please check Personal Access Token.';
+      } else if (putRes.status === 404) {
+        errorMsg = `Repository or branch "${config.owner}/${config.repo} (${branch})" not found. Please verify repo name.`;
+      } else if (putRes.status === 409) {
+        errorMsg = 'Commit SHA conflict (409). Please click Sync again to re-align with latest GitHub commit.';
+      } else if (putRes.status === 403) {
+        errorMsg = `Permission denied (403): Token lacks write permission. Ensure token has "repo" (Classic) or "Contents: Read & write" (Fine-grained).`;
+      }
+      throw new Error(errorMsg);
     }
 
     const resData = (await putRes.json()) as any;
@@ -735,6 +901,7 @@ export async function pushExcelToGitHub(
 
     const updatedConfig: GitHubSyncConfig = {
       ...config,
+      branch,
       lastSyncedAt: new Date().toISOString(),
       lastCommitUrl: commitUrl,
     };
@@ -742,7 +909,7 @@ export async function pushExcelToGitHub(
 
     return {
       success: true,
-      message: `Successfully synced Excel spreadsheet to GitHub repository (${config.owner}/${config.repo})!`,
+      message: `Successfully synced Excel spreadsheet (${filePath}) to GitHub (${config.owner}/${config.repo} on branch "${branch}")!`,
       commitUrl,
     };
   } catch (err: any) {
