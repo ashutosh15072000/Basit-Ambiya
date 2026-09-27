@@ -37,6 +37,9 @@ import {
   saveGitHubConfig,
   GitHubSyncConfig,
   toggleGuestCheckInStatus,
+  toggleGuestEventCheckIn,
+  normalizeEventName,
+  formatDateTime,
 } from '../services/rsvpExcelService';
 import {
   WeddingWish,
@@ -326,13 +329,31 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
         setSyncFeedback({
           type: 'success',
           message: res.newStatus
-            ? 'Guest marked as Checked-In! Excel sheet updated.'
+            ? 'Guest marked as Checked-In for all events! Excel sheet updated.'
             : 'Check-In status reset. Excel sheet updated.',
           commitUrl: res.githubSyncResult?.commitUrl,
         });
       }
     } catch (err: any) {
       setSyncFeedback({ type: 'error', message: err.message || 'Error updating check-in' });
+    }
+  };
+
+  const handleToggleEventCheckIn = async (rsvpId: string, eventName: string) => {
+    try {
+      const res = await toggleGuestEventCheckIn(rsvpId, eventName);
+      loadData();
+      if (res.success) {
+        setSyncFeedback({
+          type: 'success',
+          message: res.newStatus
+            ? `Guest admitted to "${eventName}"! Excel updated.`
+            : `Check-in for "${eventName}" reset. Excel updated.`,
+          commitUrl: res.githubSyncResult?.commitUrl,
+        });
+      }
+    } catch (err: any) {
+      setSyncFeedback({ type: 'error', message: err.message || 'Error updating ceremony check-in' });
     }
   };
 
@@ -967,19 +988,52 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
                         </td>
                         <td className="p-3">
                           {rsvp.attending === 'yes' ? (
-                            <button
-                              type="button"
-                              onClick={() => handleToggleCheckIn(rsvp.id)}
-                              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-cinzel font-bold transition-all cursor-pointer shadow-2xs ${
-                                rsvp.checked_in
-                                  ? 'bg-emerald-700 hover:bg-emerald-800 text-white'
-                                  : 'bg-stone-100 hover:bg-emerald-100 text-stone-700 hover:text-emerald-900 border border-stone-300 hover:border-emerald-400'
-                              }`}
-                              title={rsvp.checked_in ? `Checked in: ${rsvp.checked_in_at ? new Date(rsvp.checked_in_at).toLocaleTimeString() : 'Yes'}. Click to toggle.` : 'Click to mark checked in'}
-                            >
-                              <CheckCircle2 className={`w-3 h-3 ${rsvp.checked_in ? 'text-white' : 'text-stone-400'}`} />
-                              <span>{rsvp.checked_in ? 'Checked In' : 'Check In'}</span>
-                            </button>
+                            <div className="flex flex-col gap-1">
+                              <div className="flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleCheckIn(rsvp.id)}
+                                  className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[10px] font-cinzel font-bold transition-all cursor-pointer shadow-2xs ${
+                                    rsvp.checked_in
+                                      ? 'bg-emerald-700 hover:bg-emerald-800 text-white'
+                                      : 'bg-stone-100 hover:bg-emerald-100 text-stone-700 hover:text-emerald-900 border border-stone-300 hover:border-emerald-400'
+                                  }`}
+                                  title={rsvp.checked_in ? `Checked in: ${rsvp.checked_in_at ? formatDateTime(rsvp.checked_in_at) : 'Yes'}. Click to toggle all.` : 'Click to toggle check in for all events'}
+                                >
+                                  <CheckCircle2 className={`w-3 h-3 ${rsvp.checked_in ? 'text-white' : 'text-stone-400'}`} />
+                                  <span>{rsvp.checked_in ? 'Checked In' : 'Check In All'}</span>
+                                </button>
+                              </div>
+
+                              {/* Per-event quick toggle badges */}
+                              {rsvp.events && rsvp.events.length > 0 && (
+                                <div className="flex flex-wrap gap-1 mt-0.5">
+                                  {rsvp.events.map((ev, i) => {
+                                    const norm = normalizeEventName(ev);
+                                    const isAdmitted = Boolean(
+                                      rsvp.checked_in_events_map &&
+                                      (rsvp.checked_in_events_map[norm] || rsvp.checked_in_events_map[ev])
+                                    );
+                                    const shortName = ev.split('(')[0].replace('Wedding Reception -', 'Reception').replace('Wedding Reception', 'Reception').trim();
+                                    return (
+                                      <button
+                                        key={i}
+                                        type="button"
+                                        onClick={() => handleToggleEventCheckIn(rsvp.id, ev)}
+                                        className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-bold tracking-tight transition-all cursor-pointer ${
+                                          isAdmitted
+                                            ? 'bg-emerald-100 text-emerald-900 border border-emerald-400 hover:bg-rose-100 hover:text-rose-900 hover:border-rose-400'
+                                            : 'bg-stone-100 text-stone-600 border border-stone-300 hover:bg-emerald-100 hover:text-emerald-900 hover:border-emerald-400'
+                                        }`}
+                                        title={`${ev}: ${isAdmitted ? 'Admitted (Click to reset)' : 'Awaiting Entry (Click to admit)'}`}
+                                      >
+                                        {isAdmitted ? `✓ ${shortName}` : `+ ${shortName}`}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
                           ) : (
                             <span className="text-foreground/40 text-[11px]">—</span>
                           )}

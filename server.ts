@@ -81,6 +81,7 @@ interface RsvpEntry {
   checked_in_at?: string | null;
   checked_in_pass_id?: string | null;
   checked_in_events?: string[];
+  checked_in_events_map?: Record<string, string>;
   checked_in_guest_count?: number;
 }
 
@@ -88,7 +89,20 @@ function loadRsvps(): RsvpEntry[] {
   if (fs.existsSync(JSON_BACKUP_PATH)) {
     try {
       const data = fs.readFileSync(JSON_BACKUP_PATH, 'utf-8');
-      return JSON.parse(data);
+      const parsed = JSON.parse(data);
+      if (Array.isArray(parsed)) {
+        return parsed.map((item) => {
+          const events = Array.isArray(item.events) ? item.events : [];
+          const checkedInEvents = Array.isArray(item.checked_in_events) ? item.checked_in_events : [];
+          const checkedInMap = item.checked_in_events_map || {};
+          return {
+            ...item,
+            events,
+            checked_in_events: checkedInEvents,
+            checked_in_events_map: checkedInMap,
+          };
+        });
+      }
     } catch {
       return [];
     }
@@ -100,21 +114,54 @@ function saveRsvps(entries: RsvpEntry[]): void {
   // 1. Save JSON backup
   fs.writeFileSync(JSON_BACKUP_PATH, JSON.stringify(entries, null, 2), 'utf-8');
 
-  // 2. Build and save Excel workbook
-  const rows = entries.map((r, idx) => ({
-    'S.No': idx + 1,
-    'Submission Date': r.submitted_at,
-    'Guest Name': r.guest_name,
-    'Contact Phone': r.phone || 'N/A',
-    'Attending Status': r.attending === 'yes' ? 'Confirmed (Attending)' : 'Respectfully Declined',
-    'Total Guests Attending': r.attending === 'yes' ? r.guest_count : 0,
-    'Check-In Status': r.checked_in ? '✅ Checked In' : '⏳ Awaiting Check-In',
-    'Check-In Time': r.checked_in_at || '—',
-    'Pass ID': r.checked_in_pass_id || '—',
-    'Ceremonies Selected': r.events && r.events.length > 0 ? r.events.join('; ') : 'All Celebrations / General',
-    'Dietary Preferences': r.dietary || 'None specified',
-    'Heartfelt Duas & Message': r.message || '—',
-  }));
+  // 2. Build and save Excel workbook with multi-function tracking
+  const rows = entries.map((r, idx) => {
+    const eventsList = r.events || [];
+    const checkInMap = r.checked_in_events_map || {};
+
+    const getFuncStatus = (keyword: string): string => {
+      const isInvited = eventsList.length === 0 || eventsList.some((e) => e.toLowerCase().includes(keyword));
+      if (!isInvited) return '— Not Invited';
+
+      const matchingKey = Object.keys(checkInMap).find((k) => k.toLowerCase().includes(keyword));
+      if (matchingKey && checkInMap[matchingKey]) {
+        return `✅ Admitted (${checkInMap[matchingKey].split('T')[0]})`;
+      }
+      if (r.checked_in && (!r.checked_in_events || r.checked_in_events.length === 0)) {
+        return `✅ Admitted (${(r.checked_in_at || '').split('T')[0]})`;
+      }
+      return '⏳ Awaiting Entry';
+    };
+
+    const totalInvited = eventsList.length > 0 ? eventsList.length : 3;
+    const totalCheckedIn = Object.keys(checkInMap).length;
+    let overallStatus = '⏳ Awaiting Check-In';
+    if (totalCheckedIn >= totalInvited && totalCheckedIn > 0) {
+      overallStatus = `✅ All ${totalCheckedIn}/${totalInvited} Checked In`;
+    } else if (totalCheckedIn > 0) {
+      overallStatus = `⚡ Partial (${totalCheckedIn}/${totalInvited} Checked In)`;
+    } else if (r.checked_in) {
+      overallStatus = '✅ Checked In';
+    }
+
+    return {
+      'S.No': idx + 1,
+      'Submission Date': r.submitted_at,
+      'Guest Name': r.guest_name,
+      'Contact Phone': r.phone || 'N/A',
+      'Attending Status': r.attending === 'yes' ? 'Confirmed (Attending)' : 'Respectfully Declined',
+      'Total Guests Attending': r.attending === 'yes' ? r.guest_count : 0,
+      'Overall Check-In Status': overallStatus,
+      'Rukhsati (29 Oct) Check-In': getFuncStatus('rukhsati') || getFuncStatus('shimla'),
+      'Ramada Reception (30 Oct) Check-In': getFuncStatus('ramada'),
+      'Radiant Reception (2 Nov) Check-In': getFuncStatus('radiant'),
+      'Latest Check-In Time': r.checked_in_at || '—',
+      'VIP Pass ID': r.checked_in_pass_id || '—',
+      'Invited Ceremonies': eventsList && eventsList.length > 0 ? eventsList.join('; ') : 'All Celebrations / General',
+      'Dietary Preferences': r.dietary || 'None specified',
+      'Heartfelt Duas & Message': r.message || '—',
+    };
+  });
 
   const wb = XLSX.utils.book_new();
   const ws = rows.length > 0
@@ -127,10 +174,13 @@ function saveRsvps(entries: RsvpEntry[]): void {
           'Contact Phone': '—',
           'Attending Status': 'Awaiting Responses',
           'Total Guests Attending': 0,
-          'Check-In Status': '⏳ Awaiting Check-In',
-          'Check-In Time': '—',
-          'Pass ID': '—',
-          'Ceremonies Selected': '—',
+          'Overall Check-In Status': '⏳ Awaiting Check-In',
+          'Rukhsati (29 Oct) Check-In': '—',
+          'Ramada Reception (30 Oct) Check-In': '—',
+          'Radiant Reception (2 Nov) Check-In': '—',
+          'Latest Check-In Time': '—',
+          'VIP Pass ID': '—',
+          'Invited Ceremonies': '—',
           'Dietary Preferences': '—',
           'Heartfelt Duas & Message': 'Wedding RSVP Registry for Basit Ali & Ambiya Basher',
         },
@@ -143,7 +193,10 @@ function saveRsvps(entries: RsvpEntry[]): void {
     { wch: 18 },  // Phone
     { wch: 24 },  // Attending
     { wch: 22 },  // Guest Count
-    { wch: 20 },  // Check-In Status
+    { wch: 28 },  // Overall Check-In Status
+    { wch: 28 },  // Rukhsati Check-In
+    { wch: 30 },  // Ramada Check-In
+    { wch: 30 },  // Radiant Check-In
     { wch: 22 },  // Check-In Time
     { wch: 18 },  // Pass ID
     { wch: 45 },  // Ceremonies
@@ -151,7 +204,7 @@ function saveRsvps(entries: RsvpEntry[]): void {
     { wch: 55 },  // Message
   ];
 
-  XLSX.utils.book_append_sheet(wb, ws, 'RSVP Responses');
+  XLSX.utils.book_append_sheet(wb, ws, 'RSVP & Check-Ins');
 
   const totalGuests = entries.reduce((acc, cur) => acc + (cur.attending === 'yes' ? cur.guest_count : 0), 0);
   const attendingCount = entries.filter((e) => e.attending === 'yes').length;
@@ -457,10 +510,10 @@ app.post('/api/rsvp/bulk', async (req: Request, res: Response) => {
   }
 });
 
-// Check-in via QR scan verification endpoint
+// Check-in via QR scan verification endpoint with multi-function tracking
 app.post('/api/rsvp/checkin', async (req: Request, res: Response) => {
   try {
-    const { passId, guestName, guestCount, events, phone, checked_in_at } = req.body || {};
+    const { passId, guestName, guestCount, events, targetEvent, checkInAll, checked_in_events_map, phone, checked_in_at } = req.body || {};
     const cleanName = String(guestName || 'Honored Guest').trim();
     const cleanPassId = String(passId || `BA-PASS-${Date.now()}`).trim();
     const guests = Math.max(1, Number(guestCount) || 1);
@@ -479,19 +532,48 @@ app.post('/api/rsvp/checkin', async (req: Request, res: Response) => {
     );
 
     if (matchIdx >= 0) {
+      const existing = current[matchIdx];
+      const mergedMap: Record<string, string> = {
+        ...(existing.checked_in_events_map || {}),
+        ...(checked_in_events_map || {}),
+      };
+
+      if (targetEvent) {
+        mergedMap[targetEvent] = mergedMap[targetEvent] || nowIso;
+      }
+      if (checkInAll) {
+        eventList.forEach((ev) => {
+          mergedMap[ev] = mergedMap[ev] || nowIso;
+        });
+      }
+      if (Object.keys(mergedMap).length === 0) {
+        mergedMap[eventList[0] || 'Wedding Celebrations'] = nowIso;
+      }
+
       targetRecord = {
-        ...current[matchIdx],
+        ...existing,
         checked_in: true,
-        checked_in_at: current[matchIdx].checked_in_at || nowIso,
+        checked_in_at: nowIso,
         checked_in_pass_id: cleanPassId,
-        checked_in_events: eventList,
+        checked_in_events: Object.keys(mergedMap),
+        checked_in_events_map: mergedMap,
         checked_in_guest_count: guests,
         attending: 'yes',
-        guest_count: Math.max(current[matchIdx].guest_count, guests),
+        guest_count: Math.max(existing.guest_count, guests),
       };
       current[matchIdx] = targetRecord;
     } else {
       isNew = true;
+      const initialMap: Record<string, string> = { ...(checked_in_events_map || {}) };
+      if (targetEvent) {
+        initialMap[targetEvent] = nowIso;
+      }
+      if (checkInAll || Object.keys(initialMap).length === 0) {
+        eventList.forEach((ev) => {
+          initialMap[ev] = nowIso;
+        });
+      }
+
       targetRecord = {
         id: `rsvp-scan-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
         submitted_at: nowIso,
@@ -505,7 +587,8 @@ app.post('/api/rsvp/checkin', async (req: Request, res: Response) => {
         checked_in: true,
         checked_in_at: nowIso,
         checked_in_pass_id: cleanPassId,
-        checked_in_events: eventList,
+        checked_in_events: Object.keys(initialMap),
+        checked_in_events_map: initialMap,
         checked_in_guest_count: guests,
       };
       current.unshift(targetRecord);
@@ -552,7 +635,7 @@ app.post('/api/rsvp/checkin', async (req: Request, res: Response) => {
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-              message: `Check-in recorded: ${cleanName} (${guests} guest${guests > 1 ? 's' : ''}) [${cleanPassId}]`,
+              message: `Multi-event check-in recorded: ${cleanName} (${guests} guest${guests > 1 ? 's' : ''}) [${cleanPassId}]`,
               content: base64,
               sha,
               branch: ghBranch,
@@ -578,10 +661,45 @@ app.post('/api/rsvp/checkin', async (req: Request, res: Response) => {
   }
 });
 
+// Toggle individual event check-in status
+app.post('/api/rsvp/checkin/toggle-event', async (req: Request, res: Response) => {
+  try {
+    const { id, eventName, checked_in, checked_in_at, checked_in_events_map } = req.body || {};
+    if (!id || !eventName) return res.status(400).json({ success: false, error: 'id and eventName are required' });
+
+    const current = loadRsvps();
+    const idx = current.findIndex((r) => r.id === id);
+    if (idx < 0) return res.status(404).json({ success: false, error: 'Record not found' });
+
+    const targetMap: Record<string, string> = checked_in_events_map || { ...(current[idx].checked_in_events_map || {}) };
+    if (checked_in) {
+      targetMap[eventName] = checked_in_at || new Date().toISOString();
+    } else {
+      delete targetMap[eventName];
+    }
+
+    const hasAny = Object.keys(targetMap).length > 0;
+    current[idx].checked_in = hasAny;
+    current[idx].checked_in_events = Object.keys(targetMap);
+    current[idx].checked_in_events_map = targetMap;
+    current[idx].checked_in_at = hasAny ? (checked_in ? checked_in_at || new Date().toISOString() : current[idx].checked_in_at) : null;
+
+    saveRsvps(current);
+
+    return res.status(200).json({
+      success: true,
+      record: current[idx],
+    });
+  } catch (err: any) {
+    console.error('API /api/rsvp/checkin/toggle-event error:', err);
+    return res.status(500).json({ success: false, error: err.message || 'Server error' });
+  }
+});
+
 // Toggle check-in status manually from host manager
 app.post('/api/rsvp/checkin/toggle', async (req: Request, res: Response) => {
   try {
-    const { id, checked_in, checked_in_at } = req.body || {};
+    const { id, checked_in, checked_in_at, checked_in_events_map } = req.body || {};
     if (!id) return res.status(400).json({ success: false, error: 'id is required' });
 
     const current = loadRsvps();
@@ -590,6 +708,10 @@ app.post('/api/rsvp/checkin/toggle', async (req: Request, res: Response) => {
 
     current[idx].checked_in = Boolean(checked_in);
     current[idx].checked_in_at = checked_in ? (checked_in_at || new Date().toISOString()) : null;
+    if (checked_in_events_map) {
+      current[idx].checked_in_events_map = checked_in_events_map;
+      current[idx].checked_in_events = Object.keys(checked_in_events_map);
+    }
 
     saveRsvps(current);
 

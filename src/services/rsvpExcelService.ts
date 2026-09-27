@@ -14,7 +14,8 @@ export interface RsvpRecord {
   checked_in?: boolean;
   checked_in_at?: string | null;
   checked_in_pass_id?: string | null;
-  checked_in_events?: string[];
+  checked_in_events?: string[]; // Array of event names checked into
+  checked_in_events_map?: Record<string, string>; // Map of { eventName: isoTimestamp }
   checked_in_guest_count?: number;
 }
 
@@ -23,6 +24,8 @@ export interface CheckInPayload {
   guestName: string;
   guestCount?: number;
   events?: string[];
+  specificEvent?: string; // If scanning for a specific event only
+  checkInAll?: boolean; // If checking into all invited events
   phone?: string;
   source?: string;
 }
@@ -53,6 +56,60 @@ const DEFAULT_GH_CONFIG: GitHubSyncConfig = {
 };
 
 /**
+ * Standardizes event names for reliable matching across forms, passes, and Excel
+ */
+export function normalizeEventName(rawName: string): string {
+  const clean = (rawName || '').toLowerCase().trim();
+  if (clean.includes('rukhsati') || clean.includes('nikah') || clean.includes('shimla') || clean.includes('oct 29') || clean.includes('29th')) {
+    return 'Rukhsati (Shimla Resort)';
+  }
+  if (clean.includes('ramada') || clean.includes('oct 30') || clean.includes('30th')) {
+    return 'Wedding Reception (Hotel Ramada)';
+  }
+  if (clean.includes('radiant') || clean.includes('gorakhpur') || clean.includes('nov 2') || clean.includes('2nd') || clean.includes('walima')) {
+    return 'Wedding Reception (Radiant Resorts)';
+  }
+  return rawName.trim() || 'Wedding Celebrations';
+}
+
+/**
+ * Formats ISO date to readable string
+ */
+export function formatDateTime(isoStr?: string | null): string {
+  if (!isoStr) return '—';
+  try {
+    const d = new Date(isoStr);
+    if (isNaN(d.getTime())) return isoStr;
+    return d.toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    return isoStr;
+  }
+}
+
+/**
+ * Formats ISO date to full readable date
+ */
+function formatDate(isoStr: string): string {
+  try {
+    const d = new Date(isoStr);
+    return d.toLocaleString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    return isoStr;
+  }
+}
+
+/**
  * Retrieves all stored RSVPs from localStorage
  */
 export function getStoredRsvps(): RsvpRecord[] {
@@ -61,22 +118,38 @@ export function getStoredRsvps(): RsvpRecord[] {
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed)) {
-      return parsed.map((item, index) => ({
-        id: item.id || `rsvp-${index + 1}-${Date.now()}`,
-        submitted_at: item.submitted_at || new Date().toISOString(),
-        guest_name: item.guest_name || 'Anonymous Guest',
-        phone: item.phone || '',
-        attending: item.attending === 'no' ? 'no' : 'yes',
-        guest_count: Number(item.guest_count) || (item.attending === 'no' ? 0 : 1),
-        events: Array.isArray(item.events) ? item.events : [],
-        dietary: item.dietary || '',
-        message: item.message || '',
-        checked_in: Boolean(item.checked_in),
-        checked_in_at: item.checked_in_at || null,
-        checked_in_pass_id: item.checked_in_pass_id || null,
-        checked_in_events: Array.isArray(item.checked_in_events) ? item.checked_in_events : item.events || [],
-        checked_in_guest_count: typeof item.checked_in_guest_count === 'number' ? item.checked_in_guest_count : item.guest_count || 1,
-      }));
+      return parsed.map((item, index) => {
+        const events = Array.isArray(item.events) ? item.events : [];
+        const checkedInEvents = Array.isArray(item.checked_in_events) ? item.checked_in_events : [];
+        const checkedInMap: Record<string, string> = item.checked_in_events_map || {};
+
+        // Backfill checkedInMap from checked_in_events if needed
+        if (checkedInEvents.length > 0 && Object.keys(checkedInMap).length === 0) {
+          checkedInEvents.forEach((ev: string) => {
+            checkedInMap[ev] = item.checked_in_at || new Date().toISOString();
+          });
+        }
+
+        const isCheckedIn = Boolean(item.checked_in) || checkedInEvents.length > 0 || Object.keys(checkedInMap).length > 0;
+
+        return {
+          id: item.id || `rsvp-${index + 1}-${Date.now()}`,
+          submitted_at: item.submitted_at || new Date().toISOString(),
+          guest_name: item.guest_name || 'Anonymous Guest',
+          phone: item.phone || '',
+          attending: item.attending === 'no' ? 'no' : 'yes',
+          guest_count: Number(item.guest_count) || (item.attending === 'no' ? 0 : 1),
+          events,
+          dietary: item.dietary || '',
+          message: item.message || '',
+          checked_in: isCheckedIn,
+          checked_in_at: item.checked_in_at || null,
+          checked_in_pass_id: item.checked_in_pass_id || null,
+          checked_in_events: checkedInEvents.length > 0 ? checkedInEvents : Object.keys(checkedInMap),
+          checked_in_events_map: checkedInMap,
+          checked_in_guest_count: typeof item.checked_in_guest_count === 'number' ? item.checked_in_guest_count : item.guest_count || 1,
+        };
+      });
     }
   } catch (err) {
     console.error('Error reading wedding_rsvps from localStorage:', err);
@@ -155,41 +228,63 @@ export function saveGitHubConfig(config: GitHubSyncConfig): void {
 }
 
 /**
- * Formats ISO date to readable string
- */
-function formatDate(isoStr: string): string {
-  try {
-    const d = new Date(isoStr);
-    return d.toLocaleString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  } catch {
-    return isoStr;
-  }
-}
-
-/**
- * Builds an XLSX workbook object from the RSVP records including Check-In status
+ * Builds an XLSX workbook object from the RSVP records with Multi-Function Check-In tracking
  */
 export function buildExcelWorkbook(records: RsvpRecord[]): XLSX.WorkBook {
-  const rows = records.map((r, idx) => ({
-    'S.No': idx + 1,
-    'Submission Date': formatDate(r.submitted_at),
-    'Guest Name': r.guest_name,
-    'Contact Phone': r.phone || 'N/A',
-    'Attending Status': r.attending === 'yes' ? 'Confirmed (Attending)' : 'Respectfully Declined',
-    'Total Guests Attending': r.attending === 'yes' ? r.guest_count : 0,
-    'Check-In Status': r.checked_in ? '✅ Checked In' : '⏳ Awaiting Check-In',
-    'Check-In Time': r.checked_in_at ? formatDate(r.checked_in_at) : '—',
-    'Pass ID': r.checked_in_pass_id || '—',
-    'Ceremonies Selected': r.events && r.events.length > 0 ? r.events.join('; ') : 'All Celebrations / General',
-    'Dietary Preferences': r.dietary || 'None specified',
-    'Heartfelt Duas & Message': r.message || '—',
-  }));
+  const rows = records.map((r, idx) => {
+    const eventsList = r.events || [];
+    const checkInMap = r.checked_in_events_map || {};
+
+    // Helper to evaluate checkin status for each specific function
+    const getFuncStatus = (keyword: string): string => {
+      const isInvited = eventsList.length === 0 || eventsList.some((e) => e.toLowerCase().includes(keyword));
+      if (!isInvited) return '— Not Invited';
+
+      // Check if checked in
+      const matchingKey = Object.keys(checkInMap).find((k) => k.toLowerCase().includes(keyword));
+      if (matchingKey && checkInMap[matchingKey]) {
+        return `✅ Admitted (${formatDateTime(checkInMap[matchingKey])})`;
+      }
+      if (r.checked_in && (!r.checked_in_events || r.checked_in_events.length === 0)) {
+        return `✅ Admitted (${formatDateTime(r.checked_in_at)})`;
+      }
+      return '⏳ Awaiting Entry';
+    };
+
+    const rukhsatiStatus = getFuncStatus('rukhsati') || getFuncStatus('shimla');
+    const ramadaStatus = getFuncStatus('ramada');
+    const radiantStatus = getFuncStatus('radiant');
+
+    // Overall summary calculation
+    const totalInvitedEvents = eventsList.length > 0 ? eventsList.length : 3;
+    const totalCheckedInEvents = Object.keys(checkInMap).length;
+    let overallCheckInStr = '⏳ Awaiting Check-In';
+    if (totalCheckedInEvents >= totalInvitedEvents && totalCheckedInEvents > 0) {
+      overallCheckInStr = `✅ All ${totalCheckedInEvents}/${totalInvitedEvents} Functions Checked In`;
+    } else if (totalCheckedInEvents > 0) {
+      overallCheckInStr = `⚡ Partial (${totalCheckedInEvents}/${totalInvitedEvents} Functions Checked In)`;
+    } else if (r.checked_in) {
+      overallCheckInStr = '✅ Checked In';
+    }
+
+    return {
+      'S.No': idx + 1,
+      'Submission Date': formatDate(r.submitted_at),
+      'Guest Name': r.guest_name,
+      'Contact Phone': r.phone || 'N/A',
+      'Attending Status': r.attending === 'yes' ? 'Confirmed (Attending)' : 'Respectfully Declined',
+      'Total Guests Attending': r.attending === 'yes' ? r.guest_count : 0,
+      'Overall Check-In Status': overallCheckInStr,
+      'Rukhsati (29 Oct) Check-In': rukhsatiStatus,
+      'Ramada Reception (30 Oct) Check-In': ramadaStatus,
+      'Radiant Reception (2 Nov) Check-In': radiantStatus,
+      'Latest Check-In Time': r.checked_in_at ? formatDate(r.checked_in_at) : '—',
+      'VIP Pass ID': r.checked_in_pass_id || '—',
+      'Invited Ceremonies': eventsList.length > 0 ? eventsList.join('; ') : 'All Celebrations / General',
+      'Dietary Preferences': r.dietary || 'None specified',
+      'Heartfelt Duas & Message': r.message || '—',
+    };
+  });
 
   const wb = XLSX.utils.book_new();
 
@@ -203,10 +298,13 @@ export function buildExcelWorkbook(records: RsvpRecord[]): XLSX.WorkBook {
           'Contact Phone': '—',
           'Attending Status': 'Awaiting Responses',
           'Total Guests Attending': 0,
-          'Check-In Status': '⏳ Awaiting Check-In',
-          'Check-In Time': '—',
-          'Pass ID': '—',
-          'Ceremonies Selected': '—',
+          'Overall Check-In Status': '⏳ Awaiting Check-In',
+          'Rukhsati (29 Oct) Check-In': '—',
+          'Ramada Reception (30 Oct) Check-In': '—',
+          'Radiant Reception (2 Nov) Check-In': '—',
+          'Latest Check-In Time': '—',
+          'VIP Pass ID': '—',
+          'Invited Ceremonies': '—',
           'Dietary Preferences': '—',
           'Heartfelt Duas & Message': 'Welcome to Basit & Ambiya Wedding RSVP Registry',
         },
@@ -219,7 +317,10 @@ export function buildExcelWorkbook(records: RsvpRecord[]): XLSX.WorkBook {
     { wch: 18 }, // Phone
     { wch: 24 }, // Attending
     { wch: 22 }, // Guest Count
-    { wch: 20 }, // Check-In Status
+    { wch: 30 }, // Overall Check-In Status
+    { wch: 28 }, // Rukhsati Check-In
+    { wch: 32 }, // Ramada Reception Check-In
+    { wch: 32 }, // Radiant Reception Check-In
     { wch: 22 }, // Check-In Time
     { wch: 18 }, // Pass ID
     { wch: 45 }, // Ceremonies
@@ -227,7 +328,7 @@ export function buildExcelWorkbook(records: RsvpRecord[]): XLSX.WorkBook {
     { wch: 55 }, // Message
   ];
 
-  XLSX.utils.book_append_sheet(wb, ws, 'RSVP Responses');
+  XLSX.utils.book_append_sheet(wb, ws, 'RSVP & Check-Ins');
 
   // Summary sheet
   const totalResponses = records.length;
@@ -236,22 +337,44 @@ export function buildExcelWorkbook(records: RsvpRecord[]): XLSX.WorkBook {
   const checkedInRecords = records.filter((r) => r.checked_in);
   const checkedInCount = checkedInRecords.length;
   const checkedInGuestHeads = checkedInRecords.reduce((sum, r) => sum + (r.checked_in_guest_count || r.guest_count || 1), 0);
+
+  // Per function check-in stats
+  const rukhsatiCheckIns = records.filter((r) => {
+    const map = r.checked_in_events_map || {};
+    return Object.keys(map).some((k) => k.toLowerCase().includes('rukhsati') || k.toLowerCase().includes('shimla'));
+  }).length;
+
+  const ramadaCheckIns = records.filter((r) => {
+    const map = r.checked_in_events_map || {};
+    return Object.keys(map).some((k) => k.toLowerCase().includes('ramada'));
+  }).length;
+
+  const radiantCheckIns = records.filter((r) => {
+    const map = r.checked_in_events_map || {};
+    return Object.keys(map).some((k) => k.toLowerCase().includes('radiant'));
+  }).length;
+
   const declinedCount = records.filter((r) => r.attending === 'no').length;
 
   const summaryData = [
     { Metric: 'Couple', Value: 'Basit Ali & Ambiya Basher' },
-    { Metric: 'Wedding Date', Value: 'Thursday, 29th October 2026' },
+    { Metric: 'Sacred Rukhsati', Value: 'Thursday, 29th October 2026 (Shimla Resort)' },
+    { Metric: 'Wedding Reception 1', Value: 'Friday, 30th October 2026 (Hotel Ramada)' },
+    { Metric: 'Wedding Reception 2', Value: 'Monday, 2nd November 2026 (Radiant Resorts)' },
     { Metric: 'Total RSVP Responses', Value: totalResponses },
     { Metric: 'Confirmed Attending Responses', Value: attendingCount },
     { Metric: 'Total Expected Guests (Heads)', Value: totalGuests },
-    { Metric: 'Checked-In Passes Verified', Value: checkedInCount },
-    { Metric: 'Total Guests Admitted at Venue (Heads)', Value: checkedInGuestHeads },
+    { Metric: 'Total Passes Checked In (Any Function)', Value: checkedInCount },
+    { Metric: 'Rukhsati Guests Checked In', Value: rukhsatiCheckIns },
+    { Metric: 'Hotel Ramada Guests Checked In', Value: ramadaCheckIns },
+    { Metric: 'Radiant Resorts Guests Checked In', Value: radiantCheckIns },
+    { Metric: 'Total Admitted Guests at Venue (Heads)', Value: checkedInGuestHeads },
     { Metric: 'Declined Responses', Value: declinedCount },
     { Metric: 'Last Updated', Value: formatDate(new Date().toISOString()) },
   ];
 
   const summaryWs = XLSX.utils.json_to_sheet(summaryData);
-  summaryWs['!cols'] = [{ wch: 38 }, { wch: 38 }];
+  summaryWs['!cols'] = [{ wch: 40 }, { wch: 45 }];
   XLSX.utils.book_append_sheet(wb, summaryWs, 'Summary & Statistics');
 
   return wb;
@@ -275,21 +398,31 @@ export function downloadExcelFile(records?: RsvpRecord[], filename = 'Basit-Ambi
 }
 
 /**
- * Records a QR code check-in scan in the RSVP sheet and syncs it across server & GitHub
+ * Records a QR code check-in scan in the RSVP sheet with Multi-Function support
+ * - If guest is invited to 2 functions and visits function 1, function 1 is marked checked-in.
+ * - When they later visit function 2 with the same QR code, function 2 is marked checked-in as well.
  */
 export async function recordGuestCheckIn(payload: CheckInPayload): Promise<{
   success: boolean;
   isNewEntry: boolean;
   record: RsvpRecord;
   message: string;
+  checkedInEventName: string;
   githubSyncResult?: { success: boolean; message: string; commitUrl?: string };
 }> {
   const current = getStoredRsvps();
   const cleanName = (payload.guestName || 'Honored Guest').trim();
   const cleanPassId = (payload.passId || `BA-PASS-${Date.now()}`).trim();
   const guests = Math.max(1, Number(payload.guestCount) || 1);
-  const events = Array.isArray(payload.events) && payload.events.length > 0 ? payload.events : ['Wedding Celebrations'];
+  const invitedEvents = Array.isArray(payload.events) && payload.events.length > 0 ? payload.events : ['Wedding Celebrations'];
   const nowIso = new Date().toISOString();
+
+  // Find target event to check into
+  let targetEventToCheckIn = payload.specificEvent ? normalizeEventName(payload.specificEvent) : '';
+  if (!targetEventToCheckIn) {
+    // If no specific event passed, pick the earliest pending event, or the first event
+    targetEventToCheckIn = normalizeEventName(invitedEvents[0] || 'Wedding Celebrations');
+  }
 
   // Look for matching record: first by pass id, second by guest name, third by phone
   let matchIndex = current.findIndex(
@@ -303,19 +436,43 @@ export async function recordGuestCheckIn(payload: CheckInPayload): Promise<{
   let isNewEntry = false;
 
   if (matchIndex >= 0) {
+    const existing = current[matchIndex];
+    const prevMap: Record<string, string> = { ...(existing.checked_in_events_map || {}) };
+
+    if (payload.checkInAll) {
+      invitedEvents.forEach((ev) => {
+        const norm = normalizeEventName(ev);
+        if (!prevMap[norm]) prevMap[norm] = nowIso;
+      });
+    } else {
+      prevMap[targetEventToCheckIn] = prevMap[targetEventToCheckIn] || nowIso;
+    }
+
+    const updatedEventsList = Array.from(new Set([...(existing.checked_in_events || []), ...Object.keys(prevMap)]));
+
     targetRecord = {
-      ...current[matchIndex],
+      ...existing,
       checked_in: true,
-      checked_in_at: current[matchIndex].checked_in_at || nowIso,
+      checked_in_at: nowIso,
       checked_in_pass_id: cleanPassId,
-      checked_in_events: events,
+      checked_in_events: updatedEventsList,
+      checked_in_events_map: prevMap,
       checked_in_guest_count: guests,
       attending: 'yes',
-      guest_count: Math.max(current[matchIndex].guest_count, guests),
+      guest_count: Math.max(existing.guest_count, guests),
     };
     current[matchIndex] = targetRecord;
   } else {
     isNewEntry = true;
+    const initialMap: Record<string, string> = {};
+    if (payload.checkInAll) {
+      invitedEvents.forEach((ev) => {
+        initialMap[normalizeEventName(ev)] = nowIso;
+      });
+    } else {
+      initialMap[targetEventToCheckIn] = nowIso;
+    }
+
     targetRecord = {
       id: `rsvp-scan-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       submitted_at: nowIso,
@@ -323,13 +480,14 @@ export async function recordGuestCheckIn(payload: CheckInPayload): Promise<{
       phone: payload.phone || null,
       attending: 'yes',
       guest_count: guests,
-      events: events,
+      events: invitedEvents,
       dietary: null,
       message: 'Verified VIP QR Pass scan check-in',
       checked_in: true,
       checked_in_at: nowIso,
       checked_in_pass_id: cleanPassId,
-      checked_in_events: events,
+      checked_in_events: Object.keys(initialMap),
+      checked_in_events_map: initialMap,
       checked_in_guest_count: guests,
     };
     current.unshift(targetRecord);
@@ -347,7 +505,10 @@ export async function recordGuestCheckIn(payload: CheckInPayload): Promise<{
         passId: cleanPassId,
         guestName: cleanName,
         guestCount: guests,
-        events: events,
+        events: invitedEvents,
+        targetEvent: targetEventToCheckIn,
+        checkInAll: payload.checkInAll,
+        checked_in_events_map: targetRecord.checked_in_events_map,
         phone: payload.phone || null,
         checked_in_at: nowIso,
       }),
@@ -371,13 +532,83 @@ export async function recordGuestCheckIn(payload: CheckInPayload): Promise<{
     success: true,
     isNewEntry,
     record: targetRecord,
-    message: `Check-in recorded for ${cleanName} (${guests} guest${guests > 1 ? 's' : ''})`,
+    checkedInEventName: targetEventToCheckIn,
+    message: `Check-in recorded for ${cleanName} at "${targetEventToCheckIn}" (${guests} guest${guests > 1 ? 's' : ''})`,
     githubSyncResult,
   };
 }
 
 /**
- * Toggles check-in state manually from RSVP manager table
+ * Toggles a specific event check-in state for a guest
+ */
+export async function toggleGuestEventCheckIn(
+  recordId: string,
+  eventName: string
+): Promise<{
+  success: boolean;
+  newStatus: boolean;
+  record?: RsvpRecord;
+  githubSyncResult?: { success: boolean; message: string; commitUrl?: string };
+}> {
+  const current = getStoredRsvps();
+  const idx = current.findIndex((r) => r.id === recordId);
+  if (idx < 0) return { success: false, newStatus: false };
+
+  const normEvent = normalizeEventName(eventName);
+  const nowIso = new Date().toISOString();
+  const prevMap: Record<string, string> = { ...(current[idx].checked_in_events_map || {}) };
+
+  const wasCheckedIn = Boolean(prevMap[normEvent]);
+  const newStatus = !wasCheckedIn;
+
+  if (newStatus) {
+    prevMap[normEvent] = nowIso;
+  } else {
+    delete prevMap[normEvent];
+  }
+
+  const updatedEventsList = Object.keys(prevMap);
+  const hasAnyCheckIn = updatedEventsList.length > 0;
+
+  current[idx] = {
+    ...current[idx],
+    checked_in: hasAnyCheckIn,
+    checked_in_at: hasAnyCheckIn ? (newStatus ? nowIso : current[idx].checked_in_at) : null,
+    checked_in_events: updatedEventsList,
+    checked_in_events_map: prevMap,
+  };
+
+  saveAllRsvps(current);
+
+  try {
+    await fetch('/api/rsvp/checkin/toggle-event', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: recordId,
+        eventName: normEvent,
+        checked_in: newStatus,
+        checked_in_at: newStatus ? nowIso : null,
+        checked_in_events_map: prevMap,
+      }),
+    }).catch(() => {});
+  } catch {}
+
+  const ghConfig = getGitHubConfig();
+  let githubSyncResult: { success: boolean; message: string; commitUrl?: string } | undefined;
+  if (ghConfig.enabled && ghConfig.token && ghConfig.owner && ghConfig.repo) {
+    try {
+      githubSyncResult = await pushExcelToGitHub(current, ghConfig);
+    } catch {}
+  }
+
+  window.dispatchEvent(new CustomEvent('wedding_rsvp_updated', { detail: current }));
+
+  return { success: true, newStatus, record: current[idx], githubSyncResult };
+}
+
+/**
+ * Toggles entire check-in state manually from RSVP manager table
  */
 export async function toggleGuestCheckInStatus(recordId: string): Promise<{
   success: boolean;
@@ -393,11 +624,21 @@ export async function toggleGuestCheckInStatus(recordId: string): Promise<{
   const newStatus = !prevStatus;
   const nowIso = new Date().toISOString();
 
+  const newMap: Record<string, string> = {};
+  if (newStatus) {
+    const events = current[idx].events && current[idx].events.length > 0 ? current[idx].events : ['Wedding Celebrations'];
+    events.forEach((ev) => {
+      newMap[normalizeEventName(ev)] = nowIso;
+    });
+  }
+
   current[idx] = {
     ...current[idx],
     checked_in: newStatus,
     checked_in_at: newStatus ? nowIso : null,
     checked_in_pass_id: newStatus ? current[idx].checked_in_pass_id || `BA-MANUAL-${current[idx].id.slice(-4)}` : current[idx].checked_in_pass_id,
+    checked_in_events: Object.keys(newMap),
+    checked_in_events_map: newMap,
   };
 
   saveAllRsvps(current);
@@ -406,7 +647,7 @@ export async function toggleGuestCheckInStatus(recordId: string): Promise<{
     await fetch('/api/rsvp/checkin/toggle', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: recordId, checked_in: newStatus, checked_in_at: newStatus ? nowIso : null }),
+      body: JSON.stringify({ id: recordId, checked_in: newStatus, checked_in_at: newStatus ? nowIso : null, checked_in_events_map: newMap }),
     }).catch(() => {});
   } catch {}
 
@@ -461,8 +702,8 @@ export async function pushExcelToGitHub(
   const timestamp = new Date().toLocaleString();
   const checkedInCount = records.filter((r) => r.checked_in).length;
   const commitMessage = existingSha
-    ? `Update RSVP & Check-in sheet (${records.length} RSVPs, ${checkedInCount} Checked-In) [${timestamp}]`
-    : `Initialize RSVP & Check-in sheet (${records.length} RSVPs) [${timestamp}]`;
+    ? `Update RSVP & Multi-Function Check-In sheet (${records.length} RSVPs, ${checkedInCount} Checked-In) [${timestamp}]`
+    : `Initialize RSVP & Multi-Function Check-In sheet (${records.length} RSVPs) [${timestamp}]`;
 
   const payload: any = {
     message: commitMessage,
@@ -531,6 +772,8 @@ export async function submitRsvp(entry: Omit<RsvpRecord, 'id' | 'submitted_at'>)
     checked_in: false,
     checked_in_at: null,
     checked_in_pass_id: null,
+    checked_in_events: [],
+    checked_in_events_map: {},
   };
 
   current.unshift(newRecord);
@@ -657,20 +900,20 @@ export async function importExcelFile(file: File): Promise<{
           : 1;
 
       const checkInRaw = String(
-        findField(row, ['Check-In Status', 'Check In Status', 'Check In', 'Checked In', 'Checkin'])
+        findField(row, ['Check-In Status', 'Overall Check-In Status', 'Check In Status', 'Check In', 'Checked In', 'Checkin'])
       ).toLowerCase();
-      const checked_in = checkInRaw.includes('check') || checkInRaw.includes('yes') || checkInRaw.includes('attended');
+      const checked_in = checkInRaw.includes('check') || checkInRaw.includes('yes') || checkInRaw.includes('admit');
 
       const checkInTimeRaw = String(
-        findField(row, ['Check-In Time', 'Checkin Time', 'Scan Time', 'Arrival Time'])
+        findField(row, ['Check-In Time', 'Latest Check-In Time', 'Checkin Time', 'Scan Time', 'Arrival Time'])
       ).trim();
 
       const passId = String(
-        findField(row, ['Pass ID', 'PassId', 'Pass', 'VIP Pass', 'Check-In Pass ID'])
+        findField(row, ['VIP Pass ID', 'Pass ID', 'PassId', 'Pass', 'VIP Pass', 'Check-In Pass ID'])
       ).trim() || null;
 
       const ceremoniesRaw = String(
-        findField(row, ['Ceremonies Selected', 'Ceremonies', 'Events', 'Functions', 'Events Selected'])
+        findField(row, ['Invited Ceremonies', 'Ceremonies Selected', 'Ceremonies', 'Events', 'Functions', 'Events Selected'])
       ).trim();
       const events: string[] =
         ceremoniesRaw &&
@@ -722,6 +965,7 @@ export async function importExcelFile(file: File): Promise<{
         checked_in,
         checked_in_at: checked_in ? (checkInTimeRaw || new Date().toISOString()) : null,
         checked_in_pass_id: passId,
+        checked_in_events: checked_in ? events : [],
       });
       importedCount++;
     }

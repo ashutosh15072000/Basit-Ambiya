@@ -464,7 +464,9 @@ export const GuestCheckInPass: React.FC<GuestCheckInPassProps> = ({
               <span>🎟️</span> Show at Venue Entrance
             </p>
             <p className="font-serif-display italic text-[11px] text-foreground/75">
-              Instant scan &amp; quick check-in upon arrival
+              {passData.events.length > 1
+                ? `Valid for all ${passData.events.length} invited celebrations • Present at each venue`
+                : 'Instant scan & quick check-in upon arrival'}
             </p>
           </div>
         </div>

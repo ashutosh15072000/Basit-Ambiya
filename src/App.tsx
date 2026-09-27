@@ -17,7 +17,14 @@ import { AnimatedSection } from './components/AnimatedSection';
 import { FloatingRsvpButton } from './components/FloatingRsvpButton';
 import { InvitationPageCard } from './components/InvitationPageCard';
 import { RsvpExcelManager } from './components/RsvpExcelManager';
-import { recordGuestCheckIn } from './services/rsvpExcelService';
+import {
+  recordGuestCheckIn,
+  toggleGuestEventCheckIn,
+  getStoredRsvps,
+  normalizeEventName,
+  formatDateTime,
+  RsvpRecord,
+} from './services/rsvpExcelService';
 import {
   parseInvitedFunctionIds,
   parseGuestName,
@@ -141,6 +148,8 @@ export default function App() {
     events: string[];
     synced?: boolean;
     timestamp?: string;
+    matchedRecord?: RsvpRecord | null;
+    checkedInMap?: Record<string, string>;
   } | null>(null);
 
   useEffect(() => {
@@ -179,6 +188,7 @@ export default function App() {
             events: events.length > 0 ? events : ['Wedding Celebrations'],
             synced: false,
             timestamp: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+            checkedInMap: {} as Record<string, string>,
           };
 
           setCheckInScanInfo(scanPayload);
@@ -191,7 +201,12 @@ export default function App() {
             events: scanPayload.events,
           })
             .then((res) => {
-              setCheckInScanInfo((prev) => (prev ? { ...prev, synced: true } : null));
+              setCheckInScanInfo((prev) => (prev ? {
+                ...prev,
+                synced: true,
+                matchedRecord: res.record,
+                checkedInMap: res.record.checked_in_events_map || {},
+              } : null));
             })
             .catch((err) => {
               console.warn('Auto checkin record error:', err);
@@ -209,6 +224,68 @@ export default function App() {
       }
     }
   }, []);
+
+  const handleAdmitSpecificEvent = async (eventName: string) => {
+    if (!checkInScanInfo) return;
+    try {
+      const res = await recordGuestCheckIn({
+        passId: checkInScanInfo.passId,
+        guestName: checkInScanInfo.guestName,
+        guestCount: checkInScanInfo.guestCount,
+        events: checkInScanInfo.events,
+        specificEvent: eventName,
+      });
+      setCheckInScanInfo((prev) =>
+        prev
+          ? {
+              ...prev,
+              matchedRecord: res.record,
+              checkedInMap: res.record.checked_in_events_map || {},
+              synced: true,
+            }
+          : null
+      );
+      confetti({
+        particleCount: 50,
+        spread: 60,
+        origin: { y: 0.4 },
+        colors: ['#10b981', '#c5a059', '#1b4332'],
+      });
+    } catch (e) {
+      console.warn('Admit event error:', e);
+    }
+  };
+
+  const handleAdmitAllEvents = async () => {
+    if (!checkInScanInfo) return;
+    try {
+      const res = await recordGuestCheckIn({
+        passId: checkInScanInfo.passId,
+        guestName: checkInScanInfo.guestName,
+        guestCount: checkInScanInfo.guestCount,
+        events: checkInScanInfo.events,
+        checkInAll: true,
+      });
+      setCheckInScanInfo((prev) =>
+        prev
+          ? {
+              ...prev,
+              matchedRecord: res.record,
+              checkedInMap: res.record.checked_in_events_map || {},
+              synced: true,
+            }
+          : null
+      );
+      confetti({
+        particleCount: 75,
+        spread: 75,
+        origin: { y: 0.4 },
+        colors: ['#10b981', '#c5a059', '#93203c'],
+      });
+    } catch (e) {
+      console.warn('Admit all events error:', e);
+    }
+  };
 
   useEffect(() => {
     // Secret trigger for host only: ?admin=rsvp
@@ -497,62 +574,139 @@ export default function App() {
 
       {/* Venue Check-in Verification Popup when QR is Scanned */}
       {checkInScanInfo && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fade-in">
-          <div className="relative w-full max-w-md bg-gradient-to-b from-[#fdfbf7] via-[#faf5ed] to-[#f4eee4] border-2 border-emerald-600 rounded-3xl p-6 sm:p-8 shadow-2xl text-center space-y-4">
-            <div className="w-14 h-14 rounded-full bg-emerald-700 text-white flex items-center justify-center mx-auto shadow-md">
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
+          <div className="relative w-full max-w-lg bg-gradient-to-b from-[#fdfbf7] via-[#faf5ed] to-[#f4eee4] border-2 border-emerald-600 rounded-3xl p-5 sm:p-7 shadow-2xl text-center space-y-4 max-h-[92vh] overflow-y-auto">
+            {/* Header Badge */}
+            <div className="w-13 h-13 rounded-full bg-emerald-700 text-white flex items-center justify-center mx-auto shadow-md">
               <span className="text-2xl font-bold">✓</span>
             </div>
 
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-100 text-emerald-900 border border-emerald-400 font-cinzel text-xs font-bold uppercase tracking-wider">
-              <span>VIP Entry Verified</span>
+            <div className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-emerald-100 text-emerald-900 border border-emerald-400 font-cinzel text-xs font-bold uppercase tracking-wider">
+              <span>VIP Digital Pass Verified</span>
             </div>
 
-            <h3 className="font-cinzel text-2xl font-bold text-emerald-950 uppercase tracking-wide">
-              Welcome, {checkInScanInfo.guestName}!
-            </h3>
+            <div>
+              <h3 className="font-cinzel text-xl sm:text-2xl font-bold text-emerald-950 uppercase tracking-wide">
+                Welcome, {checkInScanInfo.guestName}!
+              </h3>
+              <p className="font-serif-display italic text-xs sm:text-sm text-foreground/75 mt-1">
+                Single QR Pass valid for all your invited wedding celebrations.
+              </p>
+            </div>
 
-            <p className="font-serif-display italic text-sm text-foreground/80">
-              Your digital wedding entry pass has been successfully verified for entrance.
-            </p>
-
-            <div className="bg-white/95 rounded-2xl p-4 border border-gold-soft/60 shadow-xs space-y-2 text-left text-xs font-serif-display">
+            {/* Quick Guest Stats Box */}
+            <div className="bg-white/95 rounded-2xl p-3.5 border border-gold-soft/60 shadow-xs space-y-2 text-left text-xs font-serif-display">
               <div className="flex justify-between border-b border-gold-soft/30 pb-1.5">
-                <span className="font-cinzel text-foreground/60 uppercase">Pass ID</span>
+                <span className="font-cinzel text-foreground/60 uppercase text-[11px] font-semibold">Pass ID</span>
                 <span className="font-mono font-bold text-emerald-900">{checkInScanInfo.passId}</span>
               </div>
               <div className="flex justify-between border-b border-gold-soft/30 pb-1.5">
-                <span className="font-cinzel text-foreground/60 uppercase">Party Size</span>
+                <span className="font-cinzel text-foreground/60 uppercase text-[11px] font-semibold">Party Size</span>
                 <span className="font-bold text-foreground">
                   {checkInScanInfo.guestCount} {checkInScanInfo.guestCount === 1 ? 'Guest' : 'Guests'} Admitted
                 </span>
               </div>
-              <div className="flex justify-between border-b border-gold-soft/30 pb-1.5">
-                <span className="font-cinzel text-foreground/60 uppercase">RSVP Sheet</span>
-                <span className="inline-flex items-center gap-1 font-bold text-emerald-800">
+              <div className="flex justify-between">
+                <span className="font-cinzel text-foreground/60 uppercase text-[11px] font-semibold">RSVP Sheet Sync</span>
+                <span className="inline-flex items-center gap-1.5 font-bold text-emerald-800">
                   <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                  <span>Check-In Recorded ✅</span>
+                  <span>Auto-Synced to Excel ✅</span>
                 </span>
-              </div>
-              <div className="space-y-1 pt-1">
-                <span className="font-cinzel text-[10px] text-foreground/60 uppercase block">Ceremonies</span>
-                <div className="flex flex-wrap gap-1">
-                  {checkInScanInfo.events.map((ev, i) => (
-                    <span key={i} className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-900 font-semibold text-[11px] border border-emerald-300">
-                      {ev}
-                    </span>
-                  ))}
-                </div>
               </div>
             </div>
 
-            <div className="flex flex-col gap-2 pt-1">
-              <button
-                type="button"
-                onClick={() => setCheckInScanInfo(null)}
-                className="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-800 to-[#1b4332] hover:brightness-110 text-white font-cinzel text-xs font-bold uppercase tracking-wider transition-all shadow-md cursor-pointer"
-              >
-                Proceed to Celebrations
-              </button>
+            {/* Multi-Function Check-In Section */}
+            <div className="space-y-2 text-left">
+              <div className="flex items-center justify-between px-1">
+                <span className="font-cinzel text-[11px] text-foreground/70 uppercase font-bold tracking-wider">
+                  Ceremonies &amp; Entry Status
+                </span>
+                <span className="text-[10px] font-cinzel text-emerald-900 bg-emerald-100/80 px-2 py-0.5 rounded-full font-bold">
+                  Multi-Function Enabled
+                </span>
+              </div>
+
+              <div className="space-y-2">
+                {checkInScanInfo.events.map((rawEv, idx) => {
+                  const normName = normalizeEventName(rawEv);
+                  const isCheckedIn = Boolean(
+                    checkInScanInfo.checkedInMap &&
+                    (checkInScanInfo.checkedInMap[normName] || checkInScanInfo.checkedInMap[rawEv])
+                  ) || (idx === 0 && checkInScanInfo.synced);
+
+                  const checkInTime =
+                    checkInScanInfo.checkedInMap?.[normName] ||
+                    checkInScanInfo.checkedInMap?.[rawEv];
+
+                  return (
+                    <div
+                      key={idx}
+                      className={`p-3 rounded-xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 ${
+                        isCheckedIn
+                          ? 'bg-emerald-50/80 border-emerald-400/80 shadow-2xs'
+                          : 'bg-white/90 border-gold-soft/60 hover:border-gold'
+                      }`}
+                    >
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-1.5">
+                          <span className={`w-2 h-2 rounded-full ${isCheckedIn ? 'bg-emerald-600' : 'bg-amber-400'}`} />
+                          <h4 className="font-cinzel font-bold text-xs sm:text-sm text-foreground">
+                            {rawEv}
+                          </h4>
+                        </div>
+                        <p className="text-[11px] font-serif-display text-foreground/70 pl-3.5">
+                          {isCheckedIn ? (
+                            <span className="text-emerald-800 font-semibold">
+                              ✅ Admitted: {checkInTime ? formatDateTime(checkInTime) : checkInScanInfo.timestamp || 'Just now'}
+                            </span>
+                          ) : (
+                            <span className="text-amber-800 italic">
+                              ⏳ Ready for check-in on arrival
+                            </span>
+                          )}
+                        </p>
+                      </div>
+
+                      <div className="shrink-0 flex items-center gap-1.5 pl-3.5 sm:pl-0">
+                        {isCheckedIn ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-cinzel font-bold uppercase bg-emerald-700 text-white shadow-2xs">
+                            <span>Admitted ✓</span>
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleAdmitSpecificEvent(rawEv)}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-cinzel font-bold uppercase tracking-wider bg-emerald-800 hover:bg-emerald-900 text-white shadow-xs cursor-pointer transition-all hover:scale-102"
+                          >
+                            <span>Admit Guest</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex flex-col gap-2 pt-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={handleAdmitAllEvents}
+                  className="w-full py-2.5 px-3 rounded-xl bg-amber-100 hover:bg-amber-200 text-amber-950 border border-amber-300 font-cinzel text-[11px] font-bold uppercase tracking-wider transition-all cursor-pointer"
+                >
+                  Admit for All Events
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCheckInScanInfo(null)}
+                  className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-emerald-800 to-[#1b4332] hover:brightness-110 text-white font-cinzel text-[11px] font-bold uppercase tracking-wider transition-all shadow-md cursor-pointer"
+                >
+                  Proceed to Event
+                </button>
+              </div>
+
               {isAdminMode && (
                 <button
                   type="button"
@@ -560,9 +714,9 @@ export default function App() {
                     setCheckInScanInfo(null);
                     setShowAdminExcel(true);
                   }}
-                  className="w-full py-2 text-xs font-cinzel font-bold text-emerald-900 hover:text-emerald-950 underline cursor-pointer"
+                  className="w-full py-1.5 text-xs font-cinzel font-bold text-emerald-900 hover:text-emerald-950 underline cursor-pointer"
                 >
-                  View Host RSVP Registry &amp; Excel Sheet →
+                  Open Host RSVP Registry &amp; Excel Sheet →
                 </button>
               )}
             </div>
