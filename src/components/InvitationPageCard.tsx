@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Maximize2, ZoomIn, ZoomOut, X, Upload, Sparkles } from 'lucide-react';
+import { Maximize2, ZoomIn, ZoomOut, X, Upload, Sparkles, Download } from 'lucide-react';
 import { getAssetPath } from '../utils/assets';
 
 interface InvitationPageCardProps {
@@ -24,6 +24,7 @@ export const InvitationPageCard: React.FC<InvitationPageCardProps> = ({
   const [imageLoaded, setImageLoaded] = useState(false);
   const [isLightboxOpen, setIsLightboxOpen] = useState(false);
   const [lightboxZoom, setLightboxZoom] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
   const [localPreview, setLocalPreview] = useState<string | null>(() => {
     if (storageKey) {
       try {
@@ -37,6 +38,7 @@ export const InvitationPageCard: React.FC<InvitationPageCardProps> = ({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
 
   const currentSrc = localPreview || getAssetPath(`assets/${candidateFilenames[candidateIndex] || defaultFilename}`);
 
@@ -49,7 +51,6 @@ export const InvitationPageCard: React.FC<InvitationPageCardProps> = ({
 
   const handleImageError = () => {
     if (localPreview) {
-      // If local preview failed, clear it and try candidate paths
       setLocalPreview(null);
       setImageLoaded(false);
       return;
@@ -94,20 +95,42 @@ export const InvitationPageCard: React.FC<InvitationPageCardProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isLightboxOpen]);
 
+  const handleDownload = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const link = document.createElement('a');
+    link.href = currentSrc;
+    link.download = `${pageTitle.replace(/[^a-zA-Z0-9]/g, '_')}.png`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <div className="relative w-full max-w-2xl sm:max-w-3xl md:max-w-4xl mx-auto flex flex-col items-center justify-center my-4 sm:my-8 px-1 sm:px-4">
-      {/* Main Full-Size Card Presentation (No distracting background) */}
-      <div className="relative w-full rounded-2xl sm:rounded-3xl overflow-hidden shadow-2xl border-2 sm:border-3 border-gold-soft/70 bg-white/95 group transition-all duration-300">
+      {/* Modern Luxury Image Card Container */}
+      <div
+        ref={cardRef}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+        className="relative w-full rounded-2xl sm:rounded-3xl overflow-hidden shadow-2xl border-2 sm:border-3 border-[#c5a059]/70 bg-gradient-to-b from-[#fdfbf7] via-white to-[#faf6f0] group transition-all duration-500 hover:shadow-[0_25px_60px_-15px_rgba(197,160,89,0.35)] hover:-translate-y-1"
+      >
+        {/* Subtle Ambient Gold Shimmer Border Glow */}
+        <div
+          className={`absolute -inset-[1px] bg-gradient-to-r from-[#c5a059]/0 via-[#e4c88a]/40 to-[#c5a059]/0 rounded-2xl sm:rounded-3xl pointer-events-none transition-opacity duration-700 ${
+            isHovered ? 'opacity-100' : 'opacity-0'
+          }`}
+        />
+
         {!imageError ? (
           <div
             onClick={() => setIsLightboxOpen(true)}
-            className="relative w-full bg-[#fdfbf7] flex items-center justify-center p-0 cursor-pointer group min-h-[300px] sm:min-h-[460px]"
+            className="relative w-full bg-[#fdfbf7] flex items-center justify-center p-0 cursor-pointer group min-h-[300px] sm:min-h-[460px] overflow-hidden"
             title="Click to view full screen"
           >
             {/* Shimmer Placeholder while loading image */}
             {!imageLoaded && (
-              <div className="absolute inset-0 bg-gradient-to-r from-[#faf6f0] via-[#f4ede0] to-[#faf6f0] animate-pulse flex flex-col items-center justify-center text-center p-6 rounded-2xl sm:rounded-3xl">
-                <div className="w-10 h-10 rounded-full border-2 border-gold-soft border-t-transparent animate-spin mb-2" />
+              <div className="absolute inset-0 bg-gradient-to-r from-[#faf6f0] via-[#f4ede0] to-[#faf6f0] animate-pulse flex flex-col items-center justify-center text-center p-6 rounded-2xl sm:rounded-3xl z-10">
+                <div className="w-10 h-10 rounded-full border-2 border-[#c5a059] border-t-transparent animate-spin mb-2" />
                 <span className="font-cinzel text-[11px] uppercase tracking-widest text-[#a84c32]">
                   Loading Sacred Invitation...
                 </span>
@@ -122,20 +145,20 @@ export const InvitationPageCard: React.FC<InvitationPageCardProps> = ({
               decoding="async"
               onLoad={() => setImageLoaded(true)}
               onError={handleImageError}
-              className="w-full h-auto object-contain rounded-2xl sm:rounded-3xl shadow-xs transition-opacity duration-300 group-hover:scale-[1.006]"
+              className="w-full h-auto object-contain rounded-2xl sm:rounded-3xl shadow-xs transition-transform duration-700 ease-out group-hover:scale-[1.012]"
             />
 
-            {/* Enlarge Hint Overlay Badge */}
-            <div className="absolute bottom-4 right-4 z-20 opacity-90 group-hover:opacity-100 transition-opacity">
-              <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-cinzel font-semibold bg-black/65 text-white backdrop-blur-md shadow-lg border border-white/20 hover:bg-black/85 transition-all">
-                <Maximize2 className="w-3.5 h-3.5 text-gold-soft" />
-                <span>Enlarge</span>
+            {/* Modern Enlarge Badge & Quick Action */}
+            <div className="absolute bottom-4 right-4 z-20 flex items-center gap-2 opacity-90 group-hover:opacity-100 transition-all transform group-hover:translate-y-0 translate-y-1">
+              <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-cinzel font-semibold bg-stone-900/80 text-[#fdfbf7] backdrop-blur-md shadow-xl border border-white/20 hover:bg-stone-900 transition-all">
+                <Maximize2 className="w-3.5 h-3.5 text-[#e4c88a]" />
+                <span>View Full Screen</span>
               </span>
             </div>
           </div>
         ) : (
           /* Placeholder display when waiting for user to upload image */
-          <div className="relative w-full min-h-[480px] sm:min-h-[620px] bg-gradient-to-b from-[#faf6f0] to-[#f4ede0] flex flex-col items-center justify-center p-6 sm:p-10 text-center border-2 border-dashed border-gold-soft/70 rounded-2xl sm:rounded-3xl">
+          <div className="relative w-full min-h-[480px] sm:min-h-[620px] bg-gradient-to-b from-[#faf6f0] to-[#f4ede0] flex flex-col items-center justify-center p-6 sm:p-10 text-center border-2 border-dashed border-[#c5a059]/70 rounded-2xl sm:rounded-3xl">
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-cinzel font-bold tracking-widest text-[#1b4332] uppercase bg-[#1b4332]/10 border border-[#1b4332]/25 mb-4">
               <Sparkles className="w-3.5 h-3.5 text-gold shrink-0" />
               {pageLabel}
@@ -149,7 +172,6 @@ export const InvitationPageCard: React.FC<InvitationPageCardProps> = ({
               Upload your image into <code className="bg-white/90 px-2 py-0.5 rounded text-xs sm:text-sm text-[#a84c32] font-mono font-bold">public/assets/{defaultFilename}</code> to display it full size here.
             </p>
 
-            {/* Direct Upload / Preview Button */}
             <div className="flex flex-col sm:flex-row items-center gap-3">
               <input
                 ref={fileInputRef}
@@ -190,7 +212,7 @@ export const InvitationPageCard: React.FC<InvitationPageCardProps> = ({
             onClick={(e) => e.stopPropagation()}
           >
             <div>
-              <p className="font-cinzel text-xs text-gold-soft tracking-widest uppercase">
+              <p className="font-cinzel text-xs text-[#e4c88a] tracking-widest uppercase font-semibold">
                 {pageLabel}
               </p>
               <h4 className="font-serif-display text-lg sm:text-xl font-bold">
@@ -199,6 +221,14 @@ export const InvitationPageCard: React.FC<InvitationPageCardProps> = ({
             </div>
 
             <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleDownload}
+                className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"
+                title="Download Invitation Card"
+              >
+                <Download className="w-5 h-5 text-[#e4c88a]" />
+              </button>
               <button
                 type="button"
                 onClick={() => setLightboxZoom(!lightboxZoom)}

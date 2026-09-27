@@ -17,6 +17,7 @@ import { AnimatedSection } from './components/AnimatedSection';
 import { FloatingRsvpButton } from './components/FloatingRsvpButton';
 import { InvitationPageCard } from './components/InvitationPageCard';
 import { RsvpExcelManager } from './components/RsvpExcelManager';
+import { recordGuestCheckIn } from './services/rsvpExcelService';
 import {
   parseInvitedFunctionIds,
   parseGuestName,
@@ -138,32 +139,73 @@ export default function App() {
     guestName: string;
     guestCount: number;
     events: string[];
+    synced?: boolean;
+    timestamp?: string;
   } | null>(null);
 
   useEffect(() => {
     // Check if URL is a check-in scan from QR code
     if (typeof window !== 'undefined' && window.location?.search) {
-      const p = new URLSearchParams(window.location.search);
-      if (p.get('checkin') === 'verified' || (p.get('pass') && p.get('name'))) {
-        const passId = p.get('pass') || 'BA-VERIFIED';
-        const name = p.get('name') || 'Honored Guest';
-        const guests = parseInt(p.get('guests') || '1', 10);
-        const eventsStr = p.get('events') || '';
-        const events = eventsStr ? eventsStr.split('|') : ['Wedding Celebrations'];
+      try {
+        const p = new URLSearchParams(window.location.search);
+        const checkinParam = p.get('checkin') || p.get('check_in') || p.get('verify') || '';
+        const rawPass = p.get('pass') || p.get('passId') || p.get('pass_id') || p.get('p') || '';
+        const rawName = p.get('name') || p.get('guest') || p.get('guest_name') || p.get('n') || '';
 
-        setCheckInScanInfo({
-          passId,
-          guestName: name,
-          guestCount: isNaN(guests) ? 1 : guests,
-          events,
-        });
+        const isCheckinScan =
+          checkinParam.toLowerCase() === 'verified' ||
+          checkinParam.toLowerCase() === 'true' ||
+          checkinParam.toLowerCase() === 'yes' ||
+          (rawPass.trim().length > 0 && rawName.trim().length > 0);
 
-        confetti({
-          particleCount: 70,
-          spread: 70,
-          origin: { y: 0.35 },
-          colors: ['#c5a059', '#1b4332', '#93203c', '#e4c88a'],
-        });
+        if (isCheckinScan) {
+          const passId = decodeURIComponent(rawPass || 'BA-VERIFIED').trim();
+          const guestNameDecoded = decodeURIComponent(rawName || 'Honored Guest').trim();
+          
+          const rawGuests = p.get('guests') || p.get('count') || p.get('guest_count') || p.get('g') || '1';
+          const parsedGuests = parseInt(rawGuests.replace(/[^0-9]/g, '') || '1', 10);
+          const guestCount = isNaN(parsedGuests) || parsedGuests <= 0 ? 1 : parsedGuests;
+
+          const eventsRaw = p.get('events') || p.get('e') || p.get('ceremonies') || '';
+          const decodedEvents = decodeURIComponent(eventsRaw);
+          const events = decodedEvents
+            ? decodedEvents.split(/[|,]/).map((s) => s.trim()).filter(Boolean)
+            : ['Wedding Celebrations'];
+
+          const scanPayload = {
+            passId,
+            guestName: guestNameDecoded,
+            guestCount,
+            events: events.length > 0 ? events : ['Wedding Celebrations'],
+            synced: false,
+            timestamp: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+          };
+
+          setCheckInScanInfo(scanPayload);
+
+          // Update RSVP Sheet and Sync to backend & GitHub automatically
+          recordGuestCheckIn({
+            passId,
+            guestName: guestNameDecoded,
+            guestCount,
+            events: scanPayload.events,
+          })
+            .then((res) => {
+              setCheckInScanInfo((prev) => (prev ? { ...prev, synced: true } : null));
+            })
+            .catch((err) => {
+              console.warn('Auto checkin record error:', err);
+            });
+
+          confetti({
+            particleCount: 80,
+            spread: 80,
+            origin: { y: 0.35 },
+            colors: ['#c5a059', '#1b4332', '#93203c', '#e4c88a'],
+          });
+        }
+      } catch (err) {
+        console.warn('QR checkin parsing safe fallback:', err);
       }
     }
   }, []);
@@ -484,6 +526,13 @@ export default function App() {
                   {checkInScanInfo.guestCount} {checkInScanInfo.guestCount === 1 ? 'Guest' : 'Guests'} Admitted
                 </span>
               </div>
+              <div className="flex justify-between border-b border-gold-soft/30 pb-1.5">
+                <span className="font-cinzel text-foreground/60 uppercase">RSVP Sheet</span>
+                <span className="inline-flex items-center gap-1 font-bold text-emerald-800">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                  <span>Check-In Recorded ✅</span>
+                </span>
+              </div>
               <div className="space-y-1 pt-1">
                 <span className="font-cinzel text-[10px] text-foreground/60 uppercase block">Ceremonies</span>
                 <div className="flex flex-wrap gap-1">
@@ -496,13 +545,27 @@ export default function App() {
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={() => setCheckInScanInfo(null)}
-              className="w-full py-3 rounded-xl bg-emerald-800 hover:bg-emerald-900 text-white font-cinzel text-xs font-bold uppercase tracking-wider transition-all shadow-md cursor-pointer"
-            >
-              Proceed to Celebrations
-            </button>
+            <div className="flex flex-col gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setCheckInScanInfo(null)}
+                className="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-800 to-[#1b4332] hover:brightness-110 text-white font-cinzel text-xs font-bold uppercase tracking-wider transition-all shadow-md cursor-pointer"
+              >
+                Proceed to Celebrations
+              </button>
+              {isAdminMode && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCheckInScanInfo(null);
+                    setShowAdminExcel(true);
+                  }}
+                  className="w-full py-2 text-xs font-cinzel font-bold text-emerald-900 hover:text-emerald-950 underline cursor-pointer"
+                >
+                  View Host RSVP Registry &amp; Excel Sheet →
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}

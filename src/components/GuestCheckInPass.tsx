@@ -61,17 +61,26 @@ export const GuestCheckInPass: React.FC<GuestCheckInPassProps> = ({
 
   // Compute verification payload
   const verificationPayload = React.useMemo(() => {
-    // Generate check-in verification URL so any camera scanning it opens verified check-in
-    const origin = typeof window !== 'undefined' ? window.location.origin : 'https://basit-ambiya.wedding';
-    const params = new URLSearchParams({
-      checkin: 'verified',
-      pass: passData.passId,
-      name: passData.guestName,
-      guests: String(passData.guestCount || 1),
-      events: passData.events.join('|'),
-      t: String(passData.timestamp),
-    });
-    return `${origin}/?${params.toString()}`;
+    // Generate check-in verification URL so any camera scanning it opens verified check-in without 404 errors on GitHub Pages
+    let baseUrl = 'https://basit-ambiya.wedding/';
+    if (typeof window !== 'undefined') {
+      try {
+        const cur = new URL(window.location.href);
+        baseUrl = `${cur.origin}${cur.pathname}`;
+      } catch {
+        baseUrl = `${window.location.origin}${window.location.pathname || '/'}`;
+      }
+    }
+    const params = new URLSearchParams();
+    params.set('checkin', 'verified');
+    params.set('pass', passData.passId || 'BA-PASS');
+    params.set('name', passData.guestName || 'Honored Guest');
+    params.set('guests', String(passData.guestCount || 1));
+    params.set('events', (passData.events || []).join('|'));
+    params.set('t', String(passData.timestamp || Date.now()));
+
+    const separator = baseUrl.includes('?') ? '&' : '?';
+    return `${baseUrl}${separator}${params.toString()}`;
   }, [passData]);
 
   // Generate QR Code on mount or payload change

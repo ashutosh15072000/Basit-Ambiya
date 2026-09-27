@@ -77,6 +77,11 @@ interface RsvpEntry {
   events: string[];
   dietary?: string | null;
   message?: string | null;
+  checked_in?: boolean;
+  checked_in_at?: string | null;
+  checked_in_pass_id?: string | null;
+  checked_in_events?: string[];
+  checked_in_guest_count?: number;
 }
 
 function loadRsvps(): RsvpEntry[] {
@@ -103,6 +108,9 @@ function saveRsvps(entries: RsvpEntry[]): void {
     'Contact Phone': r.phone || 'N/A',
     'Attending Status': r.attending === 'yes' ? 'Confirmed (Attending)' : 'Respectfully Declined',
     'Total Guests Attending': r.attending === 'yes' ? r.guest_count : 0,
+    'Check-In Status': r.checked_in ? '✅ Checked In' : '⏳ Awaiting Check-In',
+    'Check-In Time': r.checked_in_at || '—',
+    'Pass ID': r.checked_in_pass_id || '—',
     'Ceremonies Selected': r.events && r.events.length > 0 ? r.events.join('; ') : 'All Celebrations / General',
     'Dietary Preferences': r.dietary || 'None specified',
     'Heartfelt Duas & Message': r.message || '—',
@@ -119,6 +127,9 @@ function saveRsvps(entries: RsvpEntry[]): void {
           'Contact Phone': '—',
           'Attending Status': 'Awaiting Responses',
           'Total Guests Attending': 0,
+          'Check-In Status': '⏳ Awaiting Check-In',
+          'Check-In Time': '—',
+          'Pass ID': '—',
           'Ceremonies Selected': '—',
           'Dietary Preferences': '—',
           'Heartfelt Duas & Message': 'Wedding RSVP Registry for Basit Ali & Ambiya Basher',
@@ -126,30 +137,38 @@ function saveRsvps(entries: RsvpEntry[]): void {
       ]);
 
   ws['!cols'] = [
-    { wch: 8 },
-    { wch: 22 },
-    { wch: 28 },
-    { wch: 18 },
-    { wch: 24 },
-    { wch: 24 },
-    { wch: 45 },
-    { wch: 22 },
-    { wch: 55 },
+    { wch: 8 },   // S.No
+    { wch: 22 },  // Date
+    { wch: 28 },  // Guest Name
+    { wch: 18 },  // Phone
+    { wch: 24 },  // Attending
+    { wch: 22 },  // Guest Count
+    { wch: 20 },  // Check-In Status
+    { wch: 22 },  // Check-In Time
+    { wch: 18 },  // Pass ID
+    { wch: 45 },  // Ceremonies
+    { wch: 22 },  // Dietary
+    { wch: 55 },  // Message
   ];
 
   XLSX.utils.book_append_sheet(wb, ws, 'RSVP Responses');
 
   const totalGuests = entries.reduce((acc, cur) => acc + (cur.attending === 'yes' ? cur.guest_count : 0), 0);
   const attendingCount = entries.filter((e) => e.attending === 'yes').length;
+  const checkedInCount = entries.filter((e) => e.checked_in).length;
+  const checkedInGuests = entries.filter((e) => e.checked_in).reduce((acc, cur) => acc + (cur.checked_in_guest_count || cur.guest_count || 1), 0);
+
   const summaryWs = XLSX.utils.json_to_sheet([
     { Metric: 'Couple', Value: 'Basit Ali & Ambiya Basher' },
     { Metric: 'Wedding Date', Value: 'Thursday, 29th October 2026' },
     { Metric: 'Total RSVP Responses', Value: entries.length },
     { Metric: 'Confirmed Attending Responses', Value: attendingCount },
-    { Metric: 'Total Guests (Heads)', Value: totalGuests },
+    { Metric: 'Total Guests Expected (Heads)', Value: totalGuests },
+    { Metric: 'Checked-In Passes Verified', Value: checkedInCount },
+    { Metric: 'Total Guests Admitted at Venue (Heads)', Value: checkedInGuests },
     { Metric: 'Last Updated', Value: new Date().toISOString() },
   ]);
-  summaryWs['!cols'] = [{ wch: 32 }, { wch: 35 }];
+  summaryWs['!cols'] = [{ wch: 38 }, { wch: 38 }];
   XLSX.utils.book_append_sheet(wb, summaryWs, 'Summary & Statistics');
 
   const buffer = XLSX.write(wb, { bookType: 'xlsx', type: 'buffer' });
@@ -325,6 +344,11 @@ app.post('/api/rsvp/bulk', async (req: Request, res: Response) => {
       events: Array.isArray(item.events) ? item.events : [],
       dietary: item.dietary ? String(item.dietary).trim() : null,
       message: item.message ? String(item.message).trim() : null,
+      checked_in: Boolean(item.checked_in),
+      checked_in_at: item.checked_in_at || null,
+      checked_in_pass_id: item.checked_in_pass_id || null,
+      checked_in_events: Array.isArray(item.checked_in_events) ? item.checked_in_events : item.events || [],
+      checked_in_guest_count: typeof item.checked_in_guest_count === 'number' ? item.checked_in_guest_count : item.guest_count || 1,
     }));
 
     // Merge without duplicates
@@ -429,6 +453,152 @@ app.post('/api/rsvp/bulk', async (req: Request, res: Response) => {
     });
   } catch (err: any) {
     console.error('API /api/rsvp/bulk error:', err);
+    return res.status(500).json({ success: false, error: err.message || 'Server error' });
+  }
+});
+
+// Check-in via QR scan verification endpoint
+app.post('/api/rsvp/checkin', async (req: Request, res: Response) => {
+  try {
+    const { passId, guestName, guestCount, events, phone, checked_in_at } = req.body || {};
+    const cleanName = String(guestName || 'Honored Guest').trim();
+    const cleanPassId = String(passId || `BA-PASS-${Date.now()}`).trim();
+    const guests = Math.max(1, Number(guestCount) || 1);
+    const eventList = Array.isArray(events) && events.length > 0 ? events : ['Wedding Celebrations'];
+    const nowIso = checked_in_at || new Date().toISOString();
+
+    const current = loadRsvps();
+    let targetRecord: RsvpEntry;
+    let isNew = false;
+
+    const matchIdx = current.findIndex(
+      (r) =>
+        (r.checked_in_pass_id && r.checked_in_pass_id.toLowerCase() === cleanPassId.toLowerCase()) ||
+        (r.guest_name && r.guest_name.toLowerCase() === cleanName.toLowerCase()) ||
+        (phone && r.phone && r.phone === phone)
+    );
+
+    if (matchIdx >= 0) {
+      targetRecord = {
+        ...current[matchIdx],
+        checked_in: true,
+        checked_in_at: current[matchIdx].checked_in_at || nowIso,
+        checked_in_pass_id: cleanPassId,
+        checked_in_events: eventList,
+        checked_in_guest_count: guests,
+        attending: 'yes',
+        guest_count: Math.max(current[matchIdx].guest_count, guests),
+      };
+      current[matchIdx] = targetRecord;
+    } else {
+      isNew = true;
+      targetRecord = {
+        id: `rsvp-scan-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        submitted_at: nowIso,
+        guest_name: cleanName,
+        phone: phone ? String(phone).trim() : null,
+        attending: 'yes',
+        guest_count: guests,
+        events: eventList,
+        dietary: null,
+        message: 'Checked-in via QR Pass verification',
+        checked_in: true,
+        checked_in_at: nowIso,
+        checked_in_pass_id: cleanPassId,
+        checked_in_events: eventList,
+        checked_in_guest_count: guests,
+      };
+      current.unshift(targetRecord);
+    }
+
+    saveRsvps(current);
+
+    // Auto-commit to GitHub if configured
+    const ghToken = process.env.GITHUB_TOKEN;
+    const ghOwner = process.env.GITHUB_OWNER;
+    const ghRepo = process.env.GITHUB_REPO;
+    const ghBranch = process.env.GITHUB_BRANCH || 'main';
+    let githubStatus: string | null = null;
+
+    if (ghToken && ghOwner && ghRepo) {
+      try {
+        const filePath = 'wedding-rsvps.xlsx';
+        const buffer = fs.readFileSync(EXCEL_ROOT_PATH);
+        const base64 = buffer.toString('base64');
+        let sha: string | undefined = undefined;
+        try {
+          const getRes = await fetch(
+            `https://api.github.com/repos/${ghOwner}/${ghRepo}/contents/${filePath}?ref=${ghBranch}`,
+            {
+              headers: {
+                Authorization: `Bearer ${ghToken}`,
+                Accept: 'application/vnd.github.v3+json',
+              },
+            }
+          );
+          if (getRes.ok) {
+            const data = (await getRes.json()) as any;
+            sha = data.sha;
+          }
+        } catch {}
+
+        await fetch(
+          `https://api.github.com/repos/${ghOwner}/${ghRepo}/contents/${filePath}`,
+          {
+            method: 'PUT',
+            headers: {
+              Authorization: `Bearer ${ghToken}`,
+              Accept: 'application/vnd.github.v3+json',
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              message: `Check-in recorded: ${cleanName} (${guests} guest${guests > 1 ? 's' : ''}) [${cleanPassId}]`,
+              content: base64,
+              sha,
+              branch: ghBranch,
+            }),
+          }
+        );
+        githubStatus = 'Synced to GitHub repository';
+      } catch (e) {
+        console.warn('GitHub check-in sync failed:', e);
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `Check-in recorded for ${cleanName}`,
+      isNew,
+      record: targetRecord,
+      githubStatus,
+    });
+  } catch (err: any) {
+    console.error('API /api/rsvp/checkin error:', err);
+    return res.status(500).json({ success: false, error: err.message || 'Server error' });
+  }
+});
+
+// Toggle check-in status manually from host manager
+app.post('/api/rsvp/checkin/toggle', async (req: Request, res: Response) => {
+  try {
+    const { id, checked_in, checked_in_at } = req.body || {};
+    if (!id) return res.status(400).json({ success: false, error: 'id is required' });
+
+    const current = loadRsvps();
+    const idx = current.findIndex((r) => r.id === id);
+    if (idx < 0) return res.status(404).json({ success: false, error: 'Record not found' });
+
+    current[idx].checked_in = Boolean(checked_in);
+    current[idx].checked_in_at = checked_in ? (checked_in_at || new Date().toISOString()) : null;
+
+    saveRsvps(current);
+
+    return res.status(200).json({
+      success: true,
+      record: current[idx],
+    });
+  } catch (err: any) {
+    console.error('API /api/rsvp/checkin/toggle error:', err);
     return res.status(500).json({ success: false, error: err.message || 'Server error' });
   }
 });

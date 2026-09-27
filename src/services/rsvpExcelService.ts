@@ -11,6 +11,20 @@ export interface RsvpRecord {
   events: string[];
   dietary?: string | null;
   message?: string | null;
+  checked_in?: boolean;
+  checked_in_at?: string | null;
+  checked_in_pass_id?: string | null;
+  checked_in_events?: string[];
+  checked_in_guest_count?: number;
+}
+
+export interface CheckInPayload {
+  passId: string;
+  guestName: string;
+  guestCount?: number;
+  events?: string[];
+  phone?: string;
+  source?: string;
 }
 
 export interface GitHubSyncConfig {
@@ -57,6 +71,11 @@ export function getStoredRsvps(): RsvpRecord[] {
         events: Array.isArray(item.events) ? item.events : [],
         dietary: item.dietary || '',
         message: item.message || '',
+        checked_in: Boolean(item.checked_in),
+        checked_in_at: item.checked_in_at || null,
+        checked_in_pass_id: item.checked_in_pass_id || null,
+        checked_in_events: Array.isArray(item.checked_in_events) ? item.checked_in_events : item.events || [],
+        checked_in_guest_count: typeof item.checked_in_guest_count === 'number' ? item.checked_in_guest_count : item.guest_count || 1,
       }));
     }
   } catch (err) {
@@ -99,8 +118,6 @@ export function getGitHubConfig(): GitHubSyncConfig {
     console.error('Error reading github config:', err);
   }
 
-  // Allow setting via URL parameter silently without exposing anything in UI
-  // e.g. ?set_gh_token=ghp_xxx&set_gh_repo=my-repo&set_gh_owner=ashutoshs019
   if (typeof window !== 'undefined' && window.location?.search) {
     try {
       const params = new URLSearchParams(window.location.search);
@@ -108,7 +125,6 @@ export function getGitHubConfig(): GitHubSyncConfig {
       const urlOwner = params.get('set_gh_owner') || params.get('gh_owner');
       const urlRepo = params.get('set_gh_repo') || params.get('gh_repo');
       const urlBranch = params.get('set_gh_branch') || params.get('gh_branch');
-
       if (urlToken || urlOwner || urlRepo) {
         config = {
           ...config,
@@ -121,16 +137,14 @@ export function getGitHubConfig(): GitHubSyncConfig {
         };
         saveGitHubConfig(config);
       }
-    } catch {
-      // Ignore URL parsing errors
-    }
+    } catch {}
   }
 
   return config;
 }
 
 /**
- * Saves GitHub sync settings
+ * Saves GitHub sync settings to localStorage
  */
 export function saveGitHubConfig(config: GitHubSyncConfig): void {
   try {
@@ -159,7 +173,7 @@ function formatDate(isoStr: string): string {
 }
 
 /**
- * Builds an XLSX workbook object from the RSVP records
+ * Builds an XLSX workbook object from the RSVP records including Check-In status
  */
 export function buildExcelWorkbook(records: RsvpRecord[]): XLSX.WorkBook {
   const rows = records.map((r, idx) => ({
@@ -169,14 +183,16 @@ export function buildExcelWorkbook(records: RsvpRecord[]): XLSX.WorkBook {
     'Contact Phone': r.phone || 'N/A',
     'Attending Status': r.attending === 'yes' ? 'Confirmed (Attending)' : 'Respectfully Declined',
     'Total Guests Attending': r.attending === 'yes' ? r.guest_count : 0,
-    'Ceremonies Selected': r.events.length > 0 ? r.events.join('; ') : 'All Celebrations / General',
+    'Check-In Status': r.checked_in ? '✅ Checked In' : '⏳ Awaiting Check-In',
+    'Check-In Time': r.checked_in_at ? formatDate(r.checked_in_at) : '—',
+    'Pass ID': r.checked_in_pass_id || '—',
+    'Ceremonies Selected': r.events && r.events.length > 0 ? r.events.join('; ') : 'All Celebrations / General',
     'Dietary Preferences': r.dietary || 'None specified',
     'Heartfelt Duas & Message': r.message || '—',
   }));
 
   const wb = XLSX.utils.book_new();
 
-  // If no records yet, provide a header placeholder
   const ws = rows.length > 0
     ? XLSX.utils.json_to_sheet(rows)
     : XLSX.utils.json_to_sheet([
@@ -187,20 +203,25 @@ export function buildExcelWorkbook(records: RsvpRecord[]): XLSX.WorkBook {
           'Contact Phone': '—',
           'Attending Status': 'Awaiting Responses',
           'Total Guests Attending': 0,
+          'Check-In Status': '⏳ Awaiting Check-In',
+          'Check-In Time': '—',
+          'Pass ID': '—',
           'Ceremonies Selected': '—',
           'Dietary Preferences': '—',
           'Heartfelt Duas & Message': 'Welcome to Basit & Ambiya Wedding RSVP Registry',
         },
       ]);
 
-  // Set column widths
   ws['!cols'] = [
     { wch: 8 },  // S.No
     { wch: 22 }, // Date
     { wch: 28 }, // Guest Name
     { wch: 18 }, // Phone
     { wch: 24 }, // Attending
-    { wch: 24 }, // Guest Count
+    { wch: 22 }, // Guest Count
+    { wch: 20 }, // Check-In Status
+    { wch: 22 }, // Check-In Time
+    { wch: 18 }, // Pass ID
     { wch: 45 }, // Ceremonies
     { wch: 22 }, // Dietary
     { wch: 55 }, // Message
@@ -212,6 +233,9 @@ export function buildExcelWorkbook(records: RsvpRecord[]): XLSX.WorkBook {
   const totalResponses = records.length;
   const attendingCount = records.filter((r) => r.attending === 'yes').length;
   const totalGuests = records.reduce((sum, r) => sum + (r.attending === 'yes' ? r.guest_count : 0), 0);
+  const checkedInRecords = records.filter((r) => r.checked_in);
+  const checkedInCount = checkedInRecords.length;
+  const checkedInGuestHeads = checkedInRecords.reduce((sum, r) => sum + (r.checked_in_guest_count || r.guest_count || 1), 0);
   const declinedCount = records.filter((r) => r.attending === 'no').length;
 
   const summaryData = [
@@ -219,13 +243,15 @@ export function buildExcelWorkbook(records: RsvpRecord[]): XLSX.WorkBook {
     { Metric: 'Wedding Date', Value: 'Thursday, 29th October 2026' },
     { Metric: 'Total RSVP Responses', Value: totalResponses },
     { Metric: 'Confirmed Attending Responses', Value: attendingCount },
-    { Metric: 'Total Guest Count (Heads)', Value: totalGuests },
+    { Metric: 'Total Expected Guests (Heads)', Value: totalGuests },
+    { Metric: 'Checked-In Passes Verified', Value: checkedInCount },
+    { Metric: 'Total Guests Admitted at Venue (Heads)', Value: checkedInGuestHeads },
     { Metric: 'Declined Responses', Value: declinedCount },
     { Metric: 'Last Updated', Value: formatDate(new Date().toISOString()) },
   ];
 
   const summaryWs = XLSX.utils.json_to_sheet(summaryData);
-  summaryWs['!cols'] = [{ wch: 32 }, { wch: 35 }];
+  summaryWs['!cols'] = [{ wch: 38 }, { wch: 38 }];
   XLSX.utils.book_append_sheet(wb, summaryWs, 'Summary & Statistics');
 
   return wb;
@@ -249,85 +275,223 @@ export function downloadExcelFile(records?: RsvpRecord[], filename = 'Basit-Ambi
 }
 
 /**
- * Syncs the current Excel file directly to a GitHub repository via the GitHub REST API
+ * Records a QR code check-in scan in the RSVP sheet and syncs it across server & GitHub
+ */
+export async function recordGuestCheckIn(payload: CheckInPayload): Promise<{
+  success: boolean;
+  isNewEntry: boolean;
+  record: RsvpRecord;
+  message: string;
+  githubSyncResult?: { success: boolean; message: string; commitUrl?: string };
+}> {
+  const current = getStoredRsvps();
+  const cleanName = (payload.guestName || 'Honored Guest').trim();
+  const cleanPassId = (payload.passId || `BA-PASS-${Date.now()}`).trim();
+  const guests = Math.max(1, Number(payload.guestCount) || 1);
+  const events = Array.isArray(payload.events) && payload.events.length > 0 ? payload.events : ['Wedding Celebrations'];
+  const nowIso = new Date().toISOString();
+
+  // Look for matching record: first by pass id, second by guest name, third by phone
+  let matchIndex = current.findIndex(
+    (r) =>
+      (r.checked_in_pass_id && r.checked_in_pass_id.toLowerCase() === cleanPassId.toLowerCase()) ||
+      (r.guest_name && r.guest_name.toLowerCase() === cleanName.toLowerCase()) ||
+      (payload.phone && r.phone && r.phone === payload.phone)
+  );
+
+  let targetRecord: RsvpRecord;
+  let isNewEntry = false;
+
+  if (matchIndex >= 0) {
+    targetRecord = {
+      ...current[matchIndex],
+      checked_in: true,
+      checked_in_at: current[matchIndex].checked_in_at || nowIso,
+      checked_in_pass_id: cleanPassId,
+      checked_in_events: events,
+      checked_in_guest_count: guests,
+      attending: 'yes',
+      guest_count: Math.max(current[matchIndex].guest_count, guests),
+    };
+    current[matchIndex] = targetRecord;
+  } else {
+    isNewEntry = true;
+    targetRecord = {
+      id: `rsvp-scan-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      submitted_at: nowIso,
+      guest_name: cleanName,
+      phone: payload.phone || null,
+      attending: 'yes',
+      guest_count: guests,
+      events: events,
+      dietary: null,
+      message: 'Verified VIP QR Pass scan check-in',
+      checked_in: true,
+      checked_in_at: nowIso,
+      checked_in_pass_id: cleanPassId,
+      checked_in_events: events,
+      checked_in_guest_count: guests,
+    };
+    current.unshift(targetRecord);
+  }
+
+  // 1. Save locally
+  saveAllRsvps(current);
+
+  // 2. Notify backend server
+  try {
+    await fetch('/api/rsvp/checkin', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        passId: cleanPassId,
+        guestName: cleanName,
+        guestCount: guests,
+        events: events,
+        phone: payload.phone || null,
+        checked_in_at: nowIso,
+      }),
+    }).catch(() => {});
+  } catch {}
+
+  // 3. Push to GitHub if configured
+  const ghConfig = getGitHubConfig();
+  let githubSyncResult: { success: boolean; message: string; commitUrl?: string } | undefined;
+  if (ghConfig.enabled && ghConfig.token && ghConfig.owner && ghConfig.repo) {
+    try {
+      githubSyncResult = await pushExcelToGitHub(current, ghConfig);
+    } catch (ghErr) {
+      console.warn('Auto GitHub push on checkin failed:', ghErr);
+    }
+  }
+
+  window.dispatchEvent(new CustomEvent('wedding_rsvp_updated', { detail: current }));
+
+  return {
+    success: true,
+    isNewEntry,
+    record: targetRecord,
+    message: `Check-in recorded for ${cleanName} (${guests} guest${guests > 1 ? 's' : ''})`,
+    githubSyncResult,
+  };
+}
+
+/**
+ * Toggles check-in state manually from RSVP manager table
+ */
+export async function toggleGuestCheckInStatus(recordId: string): Promise<{
+  success: boolean;
+  newStatus: boolean;
+  record?: RsvpRecord;
+  githubSyncResult?: { success: boolean; message: string; commitUrl?: string };
+}> {
+  const current = getStoredRsvps();
+  const idx = current.findIndex((r) => r.id === recordId);
+  if (idx < 0) return { success: false, newStatus: false };
+
+  const prevStatus = Boolean(current[idx].checked_in);
+  const newStatus = !prevStatus;
+  const nowIso = new Date().toISOString();
+
+  current[idx] = {
+    ...current[idx],
+    checked_in: newStatus,
+    checked_in_at: newStatus ? nowIso : null,
+    checked_in_pass_id: newStatus ? current[idx].checked_in_pass_id || `BA-MANUAL-${current[idx].id.slice(-4)}` : current[idx].checked_in_pass_id,
+  };
+
+  saveAllRsvps(current);
+
+  try {
+    await fetch('/api/rsvp/checkin/toggle', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: recordId, checked_in: newStatus, checked_in_at: newStatus ? nowIso : null }),
+    }).catch(() => {});
+  } catch {}
+
+  const ghConfig = getGitHubConfig();
+  let githubSyncResult: { success: boolean; message: string; commitUrl?: string } | undefined;
+  if (ghConfig.enabled && ghConfig.token && ghConfig.owner && ghConfig.repo) {
+    try {
+      githubSyncResult = await pushExcelToGitHub(current, ghConfig);
+    } catch {}
+  }
+
+  window.dispatchEvent(new CustomEvent('wedding_rsvp_updated', { detail: current }));
+
+  return { success: true, newStatus, record: current[idx], githubSyncResult };
+}
+
+/**
+ * Pushes the Excel file directly to GitHub repository via GitHub REST API v3
  */
 export async function pushExcelToGitHub(
-  records?: RsvpRecord[],
-  configOverride?: Partial<GitHubSyncConfig>
-): Promise<{ success: boolean; message: string; commitUrl?: string; sha?: string }> {
-  const config: GitHubSyncConfig = { ...getGitHubConfig(), ...(configOverride || {}) };
-
-  if (!config.owner || !config.repo || !config.token) {
+  records: RsvpRecord[],
+  config: GitHubSyncConfig
+): Promise<{ success: boolean; message: string; commitUrl?: string }> {
+  if (!config.token || !config.owner || !config.repo) {
     return {
       success: false,
-      message: 'GitHub repository or Personal Access Token is not configured yet.',
+      message: 'GitHub credentials incomplete. Please configure Token, Owner, and Repository.',
     };
   }
 
-  const data = records || getStoredRsvps();
-  const base64Content = generateExcelBase64(data);
-  const path = config.filePath.replace(/^\//, '') || 'wedding-rsvps.xlsx';
+  const base64Content = generateExcelBase64(records);
+  const filePath = config.filePath || 'wedding-rsvps.xlsx';
   const branch = config.branch || 'main';
+  const apiUrl = `https://api.github.com/repos/${config.owner}/${config.repo}/contents/${filePath}`;
 
-  const cleanOwner = config.owner.trim();
-  const cleanRepo = config.repo.trim();
-  const cleanToken = config.token.trim();
+  let existingSha: string | undefined = undefined;
+  try {
+    const getRes = await fetch(`${apiUrl}?ref=${branch}`, {
+      headers: {
+        Authorization: `Bearer ${config.token}`,
+        Accept: 'application/vnd.github.v3+json',
+      },
+    });
+    if (getRes.ok) {
+      const data = (await getRes.json()) as any;
+      existingSha = data.sha;
+    }
+  } catch {
+    // If not found, will create new file
+  }
 
-  const apiUrl = `https://api.github.com/repos/${cleanOwner}/${cleanRepo}/contents/${encodeURIComponent(path)}?ref=${encodeURIComponent(branch)}`;
+  const timestamp = new Date().toLocaleString();
+  const checkedInCount = records.filter((r) => r.checked_in).length;
+  const commitMessage = existingSha
+    ? `Update RSVP & Check-in sheet (${records.length} RSVPs, ${checkedInCount} Checked-In) [${timestamp}]`
+    : `Initialize RSVP & Check-in sheet (${records.length} RSVPs) [${timestamp}]`;
+
+  const payload: any = {
+    message: commitMessage,
+    content: base64Content,
+    branch,
+  };
+  if (existingSha) {
+    payload.sha = existingSha;
+  }
 
   try {
-    // 1. Check if file already exists to get its SHA
-    let existingSha: string | undefined = undefined;
-    try {
-      const getRes = await fetch(apiUrl, {
-        headers: {
-          Authorization: `Bearer ${cleanToken}`,
-          Accept: 'application/vnd.github.v3+json',
-        },
-      });
-
-      if (getRes.ok) {
-        const fileInfo = await getRes.json();
-        existingSha = fileInfo.sha;
-      }
-    } catch (e) {
-      console.warn('Could not fetch existing file SHA (file may be new):', e);
-    }
-
-    // 2. Commit and upload the file via PUT
-    const putUrl = `https://api.github.com/repos/${cleanOwner}/${cleanRepo}/contents/${encodeURIComponent(path)}`;
-    const guestCount = data.length;
-    const latestGuest = data[data.length - 1]?.guest_name || 'Guest';
-
-    const commitMessage = existingSha
-      ? `Update wedding RSVP Excel registry: ${latestGuest} (${guestCount} total responses)`
-      : `Initialize wedding RSVP Excel sheet (${guestCount} responses)`;
-
-    const putRes = await fetch(putUrl, {
+    const putRes = await fetch(apiUrl, {
       method: 'PUT',
       headers: {
-        Authorization: `Bearer ${cleanToken}`,
+        Authorization: `Bearer ${config.token}`,
         Accept: 'application/vnd.github.v3+json',
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        message: commitMessage,
-        content: base64Content,
-        sha: existingSha,
-        branch: branch,
-      }),
+      body: JSON.stringify(payload),
     });
 
     if (!putRes.ok) {
-      const errJson = await putRes.json().catch(() => ({}));
-      throw new Error(errJson.message || `GitHub API error: ${putRes.status} ${putRes.statusText}`);
+      const errJson = (await putRes.json().catch(() => ({}))) as any;
+      throw new Error(errJson.message || `GitHub API error: HTTP ${putRes.status}`);
     }
 
-    const resJson = await putRes.json();
-    const commitUrl = resJson.commit?.html_url || `https://github.com/${cleanOwner}/${cleanRepo}/blob/${branch}/${path}`;
-    const newSha = resJson.content?.sha;
+    const resData = (await putRes.json()) as any;
+    const commitUrl = resData?.commit?.html_url || `https://github.com/${config.owner}/${config.repo}/blob/${branch}/${filePath}`;
 
-    // Update stored config with sync timestamp and URL
     const updatedConfig: GitHubSyncConfig = {
       ...config,
       lastSyncedAt: new Date().toISOString(),
@@ -337,23 +501,25 @@ export async function pushExcelToGitHub(
 
     return {
       success: true,
-      message: `Successfully saved and committed RSVP Excel sheet to GitHub!`,
+      message: `Successfully synced Excel spreadsheet to GitHub repository (${config.owner}/${config.repo})!`,
       commitUrl,
-      sha: newSha,
     };
   } catch (err: any) {
-    console.error('Error committing Excel to GitHub:', err);
+    console.error('Failed to commit Excel file to GitHub:', err);
     return {
       success: false,
-      message: err.message || 'Failed to update Excel file on GitHub. Check your token and permissions.',
+      message: err.message || 'Failed to push Excel file to GitHub.',
     };
   }
 }
 
 /**
- * Adds a new RSVP, updates the local registry and automatically syncs to GitHub if configured
+ * Adds or updates a single RSVP submission
  */
-export async function addRsvpEntry(entry: Omit<RsvpRecord, 'id' | 'submitted_at'>): Promise<{
+export const addRsvpEntry = submitRsvp;
+
+export async function submitRsvp(entry: Omit<RsvpRecord, 'id' | 'submitted_at'>): Promise<{
+  success: boolean;
   record: RsvpRecord;
   githubSyncResult?: { success: boolean; message: string; commitUrl?: string };
 }> {
@@ -362,64 +528,50 @@ export async function addRsvpEntry(entry: Omit<RsvpRecord, 'id' | 'submitted_at'
     ...entry,
     id: `rsvp-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
     submitted_at: new Date().toISOString(),
+    checked_in: false,
+    checked_in_at: null,
+    checked_in_pass_id: null,
   };
 
-  const updated = [...current, newRecord];
-  saveAllRsvps(updated);
+  current.unshift(newRecord);
+  saveAllRsvps(current);
 
-  // If the RSVP contains a message or Dua, save it directly to the wishes registry & sync to GitHub
-  if (entry.message && entry.message.trim().length > 0) {
-    try {
-      await addWeddingWish({
-        name: entry.guest_name,
-        relationOrCity: entry.events && entry.events.length > 0 ? 'Attending Guest' : 'Wedding Guest',
-        message: entry.message.trim(),
-        attending: entry.attending,
-      });
-    } catch (wishErr) {
-      console.warn('Could not post wish inside addRsvpEntry:', wishErr);
-    }
+  if (newRecord.message && newRecord.message.trim().length > 0) {
+    addWeddingWish({
+      name: newRecord.guest_name,
+      relationOrCity: newRecord.events.length > 0 ? 'Attending Guest' : 'Wedding Guest',
+      message: newRecord.message.trim(),
+      attending: newRecord.attending,
+    }).catch(() => {});
   }
 
-  // Notify components that an RSVP has been submitted
-  window.dispatchEvent(new CustomEvent('wedding_rsvp_submitted', { detail: newRecord }));
-  window.dispatchEvent(new CustomEvent('wedding_wishes_updated'));
-
-  // Attempt backend save if server is running
   try {
     await fetch('/api/rsvp', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(newRecord),
-    }).catch(() => {
-      // Server may not be present in static GitHub Pages environment
-    });
-  } catch {
-    // Ignore server error in static deployments
-  }
+    }).catch(() => {});
+  } catch {}
 
-  // Check if GitHub auto-sync is enabled
   const ghConfig = getGitHubConfig();
-  let githubSyncResult: { success: boolean; message: string; commitUrl?: string } | undefined = undefined;
-
-  if (ghConfig.enabled && ghConfig.token && ghConfig.owner && ghConfig.repo && ghConfig.autoSyncOnSubmit) {
+  let githubSyncResult: { success: boolean; message: string; commitUrl?: string } | undefined;
+  if (ghConfig.enabled && ghConfig.autoSyncOnSubmit && ghConfig.token && ghConfig.owner && ghConfig.repo) {
     try {
-      githubSyncResult = await pushExcelToGitHub(updated, ghConfig);
-    } catch (e: any) {
-      console.warn('Auto GitHub sync failed:', e);
-      githubSyncResult = {
-        success: false,
-        message: e.message || 'Auto-sync to GitHub encountered an issue.',
-      };
+      githubSyncResult = await pushExcelToGitHub(current, ghConfig);
+    } catch (ghErr) {
+      console.warn('Auto GitHub push on RSVP failed:', ghErr);
     }
   }
 
-  return { record: newRecord, githubSyncResult };
+  return {
+    success: true,
+    record: newRecord,
+    githubSyncResult,
+  };
 }
 
 /**
- * Imports and parses an Excel or CSV file (.xlsx, .xls, .csv), extracts RSVP records,
- * merges them with existing records, saves locally, updates backend, and syncs to GitHub.
+ * Imports an uploaded XLSX or CSV file and merges with existing records
  */
 export async function importExcelFile(file: File): Promise<{
   success: boolean;
@@ -432,14 +584,10 @@ export async function importExcelFile(file: File): Promise<{
   try {
     const arrayBuffer = await file.arrayBuffer();
     const wb = XLSX.read(arrayBuffer, { type: 'array' });
-
-    // Look for sheet named 'RSVP Responses' or take first sheet
-    const sheetName =
-      wb.SheetNames.find((s) => s.toLowerCase().includes('rsvp')) || wb.SheetNames[0];
+    const sheetName = wb.SheetNames[0];
     if (!sheetName) {
-      throw new Error('No readable sheets found in the uploaded workbook.');
+      throw new Error('No sheets found in uploaded Excel file.');
     }
-
     const ws = wb.Sheets[sheetName];
     const rawRows = XLSX.utils.sheet_to_json<Record<string, any>>(ws, { defval: '' });
 
@@ -450,7 +598,6 @@ export async function importExcelFile(file: File): Promise<{
     const currentRecords = getStoredRsvps();
     const parsedRecords: RsvpRecord[] = [];
 
-    // Helper to find value by various header name variations
     const findField = (row: Record<string, any>, patterns: string[]): any => {
       const keys = Object.keys(row);
       for (const pattern of patterns) {
@@ -466,14 +613,12 @@ export async function importExcelFile(file: File): Promise<{
     };
 
     let importedCount = 0;
-
     for (let idx = 0; idx < rawRows.length; idx++) {
       const row = rawRows[idx];
       const guestName = String(
         findField(row, ['Guest Name', 'Name', 'Full Name', 'Guest', 'Invitee'])
       ).trim();
 
-      // Skip empty or placeholder rows
       if (
         !guestName ||
         guestName.toLowerCase().includes('registry initialized') ||
@@ -494,7 +639,6 @@ export async function importExcelFile(file: File): Promise<{
         attendingRaw.includes('no') ||
         attendingRaw.includes('not attending');
       const attending: 'yes' | 'no' = isDeclined ? 'no' : 'yes';
-
       const guestCountRaw = findField(row, [
         'Total Guests Attending',
         'Guests',
@@ -511,6 +655,19 @@ export async function importExcelFile(file: File): Promise<{
           : !isNaN(parsedGuestCount) && parsedGuestCount > 0
           ? parsedGuestCount
           : 1;
+
+      const checkInRaw = String(
+        findField(row, ['Check-In Status', 'Check In Status', 'Check In', 'Checked In', 'Checkin'])
+      ).toLowerCase();
+      const checked_in = checkInRaw.includes('check') || checkInRaw.includes('yes') || checkInRaw.includes('attended');
+
+      const checkInTimeRaw = String(
+        findField(row, ['Check-In Time', 'Checkin Time', 'Scan Time', 'Arrival Time'])
+      ).trim();
+
+      const passId = String(
+        findField(row, ['Pass ID', 'PassId', 'Pass', 'VIP Pass', 'Check-In Pass ID'])
+      ).trim() || null;
 
       const ceremoniesRaw = String(
         findField(row, ['Ceremonies Selected', 'Ceremonies', 'Events', 'Functions', 'Events Selected'])
@@ -562,6 +719,9 @@ export async function importExcelFile(file: File): Promise<{
         events,
         dietary: cleanDietary,
         message: cleanMessage,
+        checked_in,
+        checked_in_at: checked_in ? (checkInTimeRaw || new Date().toISOString()) : null,
+        checked_in_pass_id: passId,
       });
       importedCount++;
     }
@@ -572,10 +732,8 @@ export async function importExcelFile(file: File): Promise<{
       );
     }
 
-    // Merge logic: avoid duplicate entries if same guest name and phone exist
     const mergedList: RsvpRecord[] = [...currentRecords];
     let newEntriesCount = 0;
-
     for (const newRec of parsedRecords) {
       const existingIdx = mergedList.findIndex(
         (cur) =>
@@ -583,7 +741,6 @@ export async function importExcelFile(file: File): Promise<{
           (cur.phone === newRec.phone || (!cur.phone && !newRec.phone))
       );
       if (existingIdx >= 0) {
-        // Update existing record
         mergedList[existingIdx] = {
           ...mergedList[existingIdx],
           ...newRec,
@@ -594,7 +751,6 @@ export async function importExcelFile(file: File): Promise<{
         newEntriesCount++;
       }
 
-      // If imported record has a message/dua, also sync into wishes list
       if (newRec.message && newRec.message.trim().length > 0) {
         addWeddingWish({
           name: newRec.guest_name,
@@ -605,10 +761,8 @@ export async function importExcelFile(file: File): Promise<{
       }
     }
 
-    // Save locally
     saveAllRsvps(mergedList);
 
-    // Save to backend server if available
     try {
       await fetch('/api/rsvp/bulk?admin=rsvp', {
         method: 'POST',
@@ -620,7 +774,6 @@ export async function importExcelFile(file: File): Promise<{
       }).catch(() => {});
     } catch {}
 
-    // Push to GitHub if configured
     const ghConfig = getGitHubConfig();
     let githubSyncResult: { success: boolean; message: string; commitUrl?: string } | undefined;
     if (ghConfig.enabled && ghConfig.token && ghConfig.owner && ghConfig.repo) {
@@ -632,7 +785,6 @@ export async function importExcelFile(file: File): Promise<{
     }
 
     const ghNotice = githubSyncResult?.success ? ' and synced to GitHub!' : '';
-
     return {
       success: true,
       message: `Successfully uploaded & imported ${importedCount} guests (${newEntriesCount} new)${ghNotice}`,
@@ -655,7 +807,6 @@ export async function importExcelFile(file: File): Promise<{
 
 /**
  * Deletes an RSVP record by ID (Admin only)
- * Updates local registry, notifies backend server, and syncs updated Excel file to GitHub.
  */
 export async function deleteRsvpEntry(id: string): Promise<{
   success: boolean;
@@ -671,7 +822,6 @@ export async function deleteRsvpEntry(id: string): Promise<{
   const updated = current.filter((r) => r.id !== id);
   saveAllRsvps(updated);
 
-  // Notify backend server
   try {
     await fetch(`/api/rsvp/${id}?admin=rsvp`, {
       method: 'DELETE',
@@ -681,7 +831,6 @@ export async function deleteRsvpEntry(id: string): Promise<{
     }).catch(() => {});
   } catch {}
 
-  // Push updated Excel file to GitHub if configured
   const ghConfig = getGitHubConfig();
   let githubSyncResult: { success: boolean; message: string; commitUrl?: string } | undefined;
   if (ghConfig.enabled && ghConfig.token && ghConfig.owner && ghConfig.repo) {
@@ -692,7 +841,6 @@ export async function deleteRsvpEntry(id: string): Promise<{
     }
   }
 
-  // Trigger global events so UI updates
   window.dispatchEvent(new CustomEvent('wedding_rsvp_updated', { detail: updated }));
   window.dispatchEvent(new CustomEvent('wedding_wishes_updated'));
 

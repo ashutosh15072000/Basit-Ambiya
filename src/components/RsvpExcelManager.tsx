@@ -36,6 +36,7 @@ import {
   getGitHubConfig,
   saveGitHubConfig,
   GitHubSyncConfig,
+  toggleGuestCheckInStatus,
 } from '../services/rsvpExcelService';
 import {
   WeddingWish,
@@ -310,6 +311,30 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
   );
   const attendingCount = rsvps.filter((r) => r.attending === 'yes').length;
   const declinedCount = rsvps.filter((r) => r.attending === 'no').length;
+  const checkedInList = rsvps.filter((r) => r.checked_in);
+  const checkedInCount = checkedInList.length;
+  const checkedInGuestHeads = checkedInList.reduce(
+    (sum, r) => sum + (r.checked_in_guest_count || (r.attending === 'yes' ? r.guest_count : 1)),
+    0
+  );
+
+  const handleToggleCheckIn = async (rsvpId: string) => {
+    try {
+      const res = await toggleGuestCheckInStatus(rsvpId);
+      loadData();
+      if (res.success) {
+        setSyncFeedback({
+          type: 'success',
+          message: res.newStatus
+            ? 'Guest marked as Checked-In! Excel sheet updated.'
+            : 'Check-In status reset. Excel sheet updated.',
+          commitUrl: res.githubSyncResult?.commitUrl,
+        });
+      }
+    } catch (err: any) {
+      setSyncFeedback({ type: 'error', message: err.message || 'Error updating check-in' });
+    }
+  };
 
   const handleDownload = () => {
     downloadExcelFile(rsvps);
@@ -589,28 +614,37 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
           {activeTab === 'rsvps' ? (
             <>
           {/* Quick Metrics */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
-            <div className="bg-white p-4 rounded-xl border border-gold-soft/50 shadow-xs">
-              <span className="text-xs font-cinzel text-foreground/60 uppercase block">Total RSVPs</span>
-              <span className="text-2xl sm:text-3xl font-bold font-serif-display text-rose-deep">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 sm:gap-4">
+            <div className="bg-white p-3.5 sm:p-4 rounded-xl border border-gold-soft/50 shadow-xs">
+              <span className="text-[11px] sm:text-xs font-cinzel text-foreground/60 uppercase block font-semibold">Total RSVPs</span>
+              <span className="text-xl sm:text-3xl font-bold font-serif-display text-rose-deep">
                 {rsvps.length}
               </span>
             </div>
-            <div className="bg-white p-4 rounded-xl border border-gold-soft/50 shadow-xs">
-              <span className="text-xs font-cinzel text-foreground/60 uppercase block">Confirmed</span>
-              <span className="text-2xl sm:text-3xl font-bold font-serif-display text-emerald-800">
+            <div className="bg-white p-3.5 sm:p-4 rounded-xl border border-gold-soft/50 shadow-xs">
+              <span className="text-[11px] sm:text-xs font-cinzel text-foreground/60 uppercase block font-semibold">Confirmed</span>
+              <span className="text-xl sm:text-3xl font-bold font-serif-display text-emerald-800">
                 {attendingCount}
               </span>
             </div>
-            <div className="bg-white p-4 rounded-xl border border-gold-soft/50 shadow-xs">
-              <span className="text-xs font-cinzel text-foreground/60 uppercase block">Total Heads</span>
-              <span className="text-2xl sm:text-3xl font-bold font-serif-display text-amber-700">
+            <div className="bg-white p-3.5 sm:p-4 rounded-xl border border-gold-soft/50 shadow-xs">
+              <span className="text-[11px] sm:text-xs font-cinzel text-foreground/60 uppercase block font-semibold">Total Heads</span>
+              <span className="text-xl sm:text-3xl font-bold font-serif-display text-amber-700">
                 {totalGuests}
               </span>
             </div>
-            <div className="bg-white p-4 rounded-xl border border-gold-soft/50 shadow-xs">
-              <span className="text-xs font-cinzel text-foreground/60 uppercase block">Declined</span>
-              <span className="text-2xl sm:text-3xl font-bold font-serif-display text-foreground/50">
+            <div className="bg-white p-3.5 sm:p-4 rounded-xl border-2 border-emerald-500/40 shadow-xs bg-gradient-to-b from-emerald-50/40 to-white">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] sm:text-xs font-cinzel text-emerald-900 uppercase block font-bold">Checked In</span>
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              </div>
+              <span className="text-xl sm:text-3xl font-bold font-serif-display text-emerald-900">
+                {checkedInCount} <span className="text-xs sm:text-sm font-normal text-emerald-700 font-sans">({checkedInGuestHeads} heads)</span>
+              </span>
+            </div>
+            <div className="bg-white p-3.5 sm:p-4 rounded-xl border border-gold-soft/50 shadow-xs">
+              <span className="text-[11px] sm:text-xs font-cinzel text-foreground/60 uppercase block font-semibold">Declined</span>
+              <span className="text-xl sm:text-3xl font-bold font-serif-display text-foreground/50">
                 {declinedCount}
               </span>
             </div>
@@ -891,6 +925,7 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
                     <th className="p-3">Contact</th>
                     <th className="p-3">Status</th>
                     <th className="p-3">Guests</th>
+                    <th className="p-3">Check-In</th>
                     <th className="p-3">Ceremonies</th>
                     <th className="p-3">Message</th>
                     <th className="p-3">Date</th>
@@ -901,15 +936,20 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
                 <tbody className="divide-y divide-gold-soft/20 font-serif-display">
                   {rsvps.length === 0 ? (
                     <tr>
-                      <td colSpan={10} className="p-8 text-center text-foreground/60 italic text-sm">
+                      <td colSpan={11} className="p-8 text-center text-foreground/60 italic text-sm">
                         No RSVP responses recorded yet. As guests submit the form, their names and details will appear here and in the Excel sheet!
                       </td>
                     </tr>
                   ) : (
                     rsvps.map((rsvp, idx) => (
-                      <tr key={rsvp.id} className="hover:bg-amber-50/50 transition-colors">
+                      <tr key={rsvp.id} className={`transition-colors ${rsvp.checked_in ? 'bg-emerald-50/40 hover:bg-emerald-50/70' : 'hover:bg-amber-50/50'}`}>
                         <td className="p-3 font-mono text-[11px] text-foreground/50">{idx + 1}</td>
-                        <td className="p-3 font-bold text-foreground text-sm">{rsvp.guest_name}</td>
+                        <td className="p-3 font-bold text-foreground text-sm">
+                          {rsvp.guest_name}
+                          {rsvp.checked_in && (
+                            <span className="ml-1.5 inline-block w-2 h-2 rounded-full bg-emerald-600" title="Checked in at venue" />
+                          )}
+                        </td>
                         <td className="p-3 text-foreground/75 font-mono text-[11px]">{rsvp.phone || '—'}</td>
                         <td className="p-3">
                           {rsvp.attending === 'yes' ? (
@@ -924,6 +964,25 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
                         </td>
                         <td className="p-3 font-semibold text-foreground/90">
                           {rsvp.attending === 'yes' ? rsvp.guest_count : 0}
+                        </td>
+                        <td className="p-3">
+                          {rsvp.attending === 'yes' ? (
+                            <button
+                              type="button"
+                              onClick={() => handleToggleCheckIn(rsvp.id)}
+                              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-cinzel font-bold transition-all cursor-pointer shadow-2xs ${
+                                rsvp.checked_in
+                                  ? 'bg-emerald-700 hover:bg-emerald-800 text-white'
+                                  : 'bg-stone-100 hover:bg-emerald-100 text-stone-700 hover:text-emerald-900 border border-stone-300 hover:border-emerald-400'
+                              }`}
+                              title={rsvp.checked_in ? `Checked in: ${rsvp.checked_in_at ? new Date(rsvp.checked_in_at).toLocaleTimeString() : 'Yes'}. Click to toggle.` : 'Click to mark checked in'}
+                            >
+                              <CheckCircle2 className={`w-3 h-3 ${rsvp.checked_in ? 'text-white' : 'text-stone-400'}`} />
+                              <span>{rsvp.checked_in ? 'Checked In' : 'Check In'}</span>
+                            </button>
+                          ) : (
+                            <span className="text-foreground/40 text-[11px]">—</span>
+                          )}
                         </td>
                         <td className="p-3 text-foreground/80 max-w-xs truncate" title={rsvp.events.join(', ')}>
                           {rsvp.events.length > 0 ? rsvp.events.join(', ') : 'All Celebrations'}
