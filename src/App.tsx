@@ -436,21 +436,48 @@ export default function App() {
   };
 
   useEffect(() => {
-    // Secret trigger for host only: ?admin=rsvp
+    // Secret trigger for host only: ?admin=rsvp or ?scanner=true
     if (typeof window !== 'undefined' && window.location?.search) {
       const p = new URLSearchParams(window.location.search);
-      if (p.get('admin') === 'rsvp' || p.get('host') === 'rsvp') {
+      if (
+        p.get('admin') === 'rsvp' ||
+        p.get('host') === 'rsvp' ||
+        p.get('admin') === 'excel'
+      ) {
         setIsAdminMode(true);
         setShowAdminExcel(true);
       }
+      if (
+        p.get('scanner') === 'true' ||
+        p.get('scanner') === '1' ||
+        p.get('scan') === 'true' ||
+        p.get('gate') === 'true' ||
+        p.get('admin') === 'scanner' ||
+        p.get('usher') === 'scanner' ||
+        p.get('usher') === 'true'
+      ) {
+        setIsAdminMode(true);
+        setIsUsherDeskUnlocked(true);
+        setShowHostScanner(true);
+      }
     }
 
-    // Secret keyboard shortcut: Ctrl+Shift+E
+    // Keyboard shortcuts:
+    // Ctrl+Shift+E -> Toggle RSVP Excel Panel
+    // Ctrl+Shift+S or Alt+S or Ctrl+Shift+Q -> Toggle Admin Gate Scanner
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'E' || e.key === 'e')) {
         e.preventDefault();
         setIsAdminMode(true);
         setShowAdminExcel((prev) => !prev);
+      }
+      if (
+        ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'S' || e.key === 's')) ||
+        ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'Q' || e.key === 'q')) ||
+        (e.altKey && (e.key === 'S' || e.key === 's'))
+      ) {
+        e.preventDefault();
+        setShowHostScanner((prev) => !prev);
       }
     };
 
@@ -459,12 +486,18 @@ export default function App() {
       setShowAdminExcel(true);
     };
 
+    const handleOpenScanner = () => {
+      setShowHostScanner(true);
+    };
+
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('open_rsvp_excel_manager', handleOpenManager);
+    window.addEventListener('open_admin_qr_scanner', handleOpenScanner);
 
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('open_rsvp_excel_manager', handleOpenManager);
+      window.removeEventListener('open_admin_qr_scanner', handleOpenScanner);
     };
   }, []);
 
@@ -678,6 +711,24 @@ export default function App() {
               Tap any floral accent to blossom 🌸
             </span>
           </aside>
+
+          {/* Floating Gate Scanner Action Button */}
+          <button
+            type="button"
+            id="floating-gate-scanner-button"
+            onClick={() => setShowHostScanner(true)}
+            aria-label="Open Host Gate QR & Google Lens Scanner"
+            className="fixed bottom-20 right-5 sm:bottom-22 sm:right-6 z-40 group flex items-center gap-2 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-full bg-gradient-to-r from-[#1b4332] via-emerald-800 to-[#1b4332] text-white shadow-[0_6px_25px_rgba(27,67,50,0.45)] hover:shadow-[0_8px_30px_rgba(27,67,50,0.65)] border-2 border-emerald-400/80 transition-all duration-300 hover:scale-105 active:scale-95 cursor-pointer select-none backdrop-blur-md"
+            title="Open Host Gate QR & Google Lens Scanner (Alt+S)"
+          >
+            <span className="w-5 h-5 rounded-full bg-white/20 flex items-center justify-center text-amber-300 shrink-0 border border-white/30 group-hover:rotate-12 transition-transform duration-300">
+              <span className="text-xs">📷</span>
+            </span>
+            <span className="font-cinzel text-[11px] sm:text-xs font-bold tracking-wider text-emerald-100 uppercase drop-shadow-xs flex items-center gap-1.5">
+              Gate Scanner
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+            </span>
+          </button>
 
           {/* Floating RSVP Action Button at Bottom Right */}
           <FloatingRsvpButton targetId="rsvp" />

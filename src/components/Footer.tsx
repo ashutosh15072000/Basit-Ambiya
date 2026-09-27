@@ -35,6 +35,27 @@ export const Footer: React.FC = () => {
         <p className="mt-3 font-cinzel text-xs tracking-widest text-cream/80 uppercase font-semibold">
           #BasitGotAmbitious
         </p>
+
+        {/* Host & Gate Usher Portal Access */}
+        <div className="mt-8 pt-6 border-t border-gold-soft/20 flex flex-wrap items-center justify-center gap-3">
+          <button
+            type="button"
+            onClick={() => window.dispatchEvent(new CustomEvent('open_admin_qr_scanner'))}
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-emerald-900/60 hover:bg-emerald-800 border border-emerald-400/40 text-emerald-200 hover:text-white font-cinzel text-[10px] sm:text-[11px] font-bold uppercase tracking-wider transition-all cursor-pointer shadow-xs"
+          >
+            <span>📷</span>
+            <span>Host Gate Scanner</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => window.dispatchEvent(new CustomEvent('open_rsvp_excel_manager'))}
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-amber-950/40 hover:bg-amber-900/60 border border-amber-400/30 text-amber-200 hover:text-white font-cinzel text-[10px] sm:text-[11px] font-bold uppercase tracking-wider transition-all cursor-pointer shadow-xs"
+          >
+            <span>📊</span>
+            <span>Host RSVP Registry</span>
+          </button>
+        </div>
       </div>
     </footer>
   );
