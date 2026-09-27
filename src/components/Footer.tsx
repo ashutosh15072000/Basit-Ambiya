@@ -1,7 +1,11 @@
 import React from 'react';
 import { IslamicPatternOverlay } from './IslamicBackground';
 
-export const Footer: React.FC = () => {
+interface FooterProps {
+  isAdmin?: boolean;
+}
+
+export const Footer: React.FC<FooterProps> = ({ isAdmin = false }) => {
   return (
     <footer className="relative bg-[#14281f] text-cream py-16 px-6 text-center overflow-hidden border-t-2 border-gold-soft/50">
       <IslamicPatternOverlay opacity={0.08} />
@@ -36,26 +40,28 @@ export const Footer: React.FC = () => {
           #BasitGotAmbitious
         </p>
 
-        {/* Host & Gate Usher Portal Access */}
-        <div className="mt-8 pt-6 border-t border-gold-soft/20 flex flex-wrap items-center justify-center gap-3">
-          <button
-            type="button"
-            onClick={() => window.dispatchEvent(new CustomEvent('open_admin_qr_scanner'))}
-            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-emerald-900/60 hover:bg-emerald-800 border border-emerald-400/40 text-emerald-200 hover:text-white font-cinzel text-[10px] sm:text-[11px] font-bold uppercase tracking-wider transition-all cursor-pointer shadow-xs"
-          >
-            <span>📷</span>
-            <span>Host Gate Scanner</span>
-          </button>
+        {/* Host & Gate Usher Portal Access (Visible ONLY in Admin Mode) */}
+        {isAdmin && (
+          <div className="mt-8 pt-6 border-t border-gold-soft/20 flex flex-wrap items-center justify-center gap-3 animate-fade-in">
+            <button
+              type="button"
+              onClick={() => window.dispatchEvent(new CustomEvent('open_admin_qr_scanner'))}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-emerald-900/80 hover:bg-emerald-800 border border-emerald-400/40 text-emerald-200 hover:text-white font-cinzel text-[10px] sm:text-[11px] font-bold uppercase tracking-wider transition-all cursor-pointer shadow-xs"
+            >
+              <span>📷</span>
+              <span>Host Gate Scanner</span>
+            </button>
 
-          <button
-            type="button"
-            onClick={() => window.dispatchEvent(new CustomEvent('open_rsvp_excel_manager'))}
-            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-amber-950/40 hover:bg-amber-900/60 border border-amber-400/30 text-amber-200 hover:text-white font-cinzel text-[10px] sm:text-[11px] font-bold uppercase tracking-wider transition-all cursor-pointer shadow-xs"
-          >
-            <span>📊</span>
-            <span>Host RSVP Registry</span>
-          </button>
-        </div>
+            <button
+              type="button"
+              onClick={() => window.dispatchEvent(new CustomEvent('open_rsvp_excel_manager'))}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-amber-950/60 hover:bg-amber-900/80 border border-amber-400/30 text-amber-200 hover:text-white font-cinzel text-[10px] sm:text-[11px] font-bold uppercase tracking-wider transition-all cursor-pointer shadow-xs"
+            >
+              <span>📊</span>
+              <span>Host RSVP Registry</span>
+            </button>
+          </div>
+        )}
       </div>
     </footer>
   );

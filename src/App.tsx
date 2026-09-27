@@ -702,7 +702,7 @@ export default function App() {
           <FamilySection />
 
           {/* Footer Section */}
-          <Footer />
+          <Footer isAdmin={isAdminMode || isUsherDeskUnlocked} />
 
           {/* Interactive Floating Blossom Prompt Widget */}
           <aside aria-label="Floral interaction prompt" className="fixed bottom-6 left-6 z-40 hidden sm:flex items-center gap-2.5 bg-white/90 backdrop-blur-md border border-gold-soft/70 px-4 py-2 rounded-full shadow-lg transition-all duration-300 hover:bg-white select-none">
@@ -712,23 +712,25 @@ export default function App() {
             </span>
           </aside>
 
-          {/* Floating Gate Scanner Action Button */}
-          <button
-            type="button"
-            id="floating-gate-scanner-button"
-            onClick={() => setShowHostScanner(true)}
-            aria-label="Open Host Gate QR & Google Lens Scanner"
-            className="fixed bottom-20 right-5 sm:bottom-22 sm:right-6 z-40 group flex items-center gap-2 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-full bg-gradient-to-r from-[#1b4332] via-emerald-800 to-[#1b4332] text-white shadow-[0_6px_25px_rgba(27,67,50,0.45)] hover:shadow-[0_8px_30px_rgba(27,67,50,0.65)] border-2 border-emerald-400/80 transition-all duration-300 hover:scale-105 active:scale-95 cursor-pointer select-none backdrop-blur-md"
-            title="Open Host Gate QR & Google Lens Scanner (Alt+S)"
-          >
-            <span className="w-5 h-5 rounded-full bg-white/20 flex items-center justify-center text-amber-300 shrink-0 border border-white/30 group-hover:rotate-12 transition-transform duration-300">
-              <span className="text-xs">📷</span>
-            </span>
-            <span className="font-cinzel text-[11px] sm:text-xs font-bold tracking-wider text-emerald-100 uppercase drop-shadow-xs flex items-center gap-1.5">
-              Gate Scanner
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-            </span>
-          </button>
+          {/* Floating Gate Scanner Action Button (Visible ONLY in Admin / Host Mode) */}
+          {(isAdminMode || isUsherDeskUnlocked) && (
+            <button
+              type="button"
+              id="floating-gate-scanner-button"
+              onClick={() => setShowHostScanner(true)}
+              aria-label="Open Host Gate QR & Google Lens Scanner"
+              className="fixed bottom-20 right-5 sm:bottom-22 sm:right-6 z-40 group flex items-center gap-2 px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-full bg-gradient-to-r from-[#1b4332] via-emerald-800 to-[#1b4332] text-white shadow-[0_6px_25px_rgba(27,67,50,0.45)] hover:shadow-[0_8px_30px_rgba(27,67,50,0.65)] border-2 border-emerald-400/80 transition-all duration-300 hover:scale-105 active:scale-95 cursor-pointer select-none backdrop-blur-md animate-fade-in"
+              title="Open Host Gate QR & Google Lens Scanner (Alt+S)"
+            >
+              <span className="w-5 h-5 rounded-full bg-white/20 flex items-center justify-center text-amber-300 shrink-0 border border-white/30 group-hover:rotate-12 transition-transform duration-300">
+                <span className="text-xs">📷</span>
+              </span>
+              <span className="font-cinzel text-[11px] sm:text-xs font-bold tracking-wider text-emerald-100 uppercase drop-shadow-xs flex items-center gap-1.5">
+                Gate Scanner
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+              </span>
+            </button>
+          )}
 
           {/* Floating RSVP Action Button at Bottom Right */}
           <FloatingRsvpButton targetId="rsvp" />
