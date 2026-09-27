@@ -16,6 +16,8 @@ import {
 } from 'lucide-react';
 import { FlowerDivider } from './Ornaments';
 import { getAssetPath } from '../utils/assets';
+import { CheckInTimeline } from './CheckInTimeline';
+import { getStoredRsvps, normalizeEventName } from '../services/rsvpExcelService';
 
 export interface CheckInPassData {
   passId: string;
@@ -58,6 +60,29 @@ export const GuestCheckInPass: React.FC<GuestCheckInPassProps> = ({
   const [downloading, setDownloading] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
   const passCardRef = useRef<HTMLDivElement>(null);
+
+  // Compute previously recorded check-ins if available
+  const existingCheckedInMap = React.useMemo(() => {
+    try {
+      const stored = getStoredRsvps();
+      const match = stored.find(
+        (r) =>
+          (r.checked_in_pass_id && r.checked_in_pass_id.toLowerCase() === (passData.passId || '').toLowerCase()) ||
+          (r.guest_name && r.guest_name.toLowerCase() === (passData.guestName || '').toLowerCase())
+      );
+      if (match?.checked_in_events_map && Object.keys(match.checked_in_events_map).length > 0) {
+        return match.checked_in_events_map;
+      }
+      if (match?.checked_in_events && match.checked_in_events.length > 0) {
+        const m: Record<string, string> = {};
+        match.checked_in_events.forEach((ev) => {
+          m[normalizeEventName(ev)] = match.checked_in_at || new Date().toISOString();
+        });
+        return m;
+      }
+    } catch {}
+    return {};
+  }, [passData.passId, passData.guestName]);
 
   // Compute verification payload
   const verificationPayload = React.useMemo(() => {
@@ -438,6 +463,15 @@ export const GuestCheckInPass: React.FC<GuestCheckInPassProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Guest Visit History & Check-In Timeline */}
+      <CheckInTimeline
+        events={passData.events}
+        checkedInMap={existingCheckedInMap}
+        guestCount={passData.guestCount}
+        passId={passData.passId}
+        title="Check-In History &amp; Attendance Timeline"
+      />
 
       {/* QR Code Container */}
       <div className="relative bg-white rounded-2xl p-4 sm:p-5 border-2 border-emerald-800/30 shadow-md inline-block max-w-xs mx-auto">

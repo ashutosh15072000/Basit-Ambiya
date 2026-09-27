@@ -19,6 +19,7 @@ import { FloatingRsvpButton } from './components/FloatingRsvpButton';
 import { InvitationPageCard } from './components/InvitationPageCard';
 import { RsvpExcelManager } from './components/RsvpExcelManager';
 import { AdminQrScannerModal } from './components/AdminQrScannerModal';
+import { CheckInTimeline } from './components/CheckInTimeline';
 import {
   recordGuestCheckIn,
   toggleGuestEventCheckIn,
@@ -875,6 +876,15 @@ export default function App() {
                 </div>
               </div>
 
+              {/* Guest Visit History & Check-In Timeline */}
+              <CheckInTimeline
+                events={checkInScanInfo.events}
+                checkedInMap={checkInScanInfo.checkedInMap || {}}
+                guestCount={checkInScanInfo.guestCount}
+                passId={checkInScanInfo.passId}
+                title="Guest Visit &amp; Entry History"
+              />
+
               {/* Action Buttons */}
               <div className="flex flex-col gap-2 pt-2">
                 <button
@@ -1077,6 +1087,15 @@ export default function App() {
                   })}
                 </div>
               </div>
+
+              {/* Guest Visit History & Timeline */}
+              <CheckInTimeline
+                events={checkInScanInfo.events}
+                checkedInMap={checkInScanInfo.checkedInMap || {}}
+                guestCount={checkInScanInfo.guestCount}
+                passId={checkInScanInfo.passId}
+                title="My Attendance &amp; Check-In Timeline"
+              />
 
               {/* Security & Gate Admission Instructions */}
               <div className="bg-amber-50/70 border border-amber-200/80 rounded-2xl p-3.5 text-left text-xs font-serif-display space-y-1">

@@ -25,6 +25,7 @@ import {
   formatDateTime,
   RsvpRecord,
 } from '../services/rsvpExcelService';
+import { CheckInTimeline } from './CheckInTimeline';
 
 interface AdminQrScannerModalProps {
   isOpen: boolean;
@@ -807,6 +808,15 @@ export const AdminQrScannerModal: React.FC<AdminQrScannerModalProps> = ({
                   })}
                 </div>
               </div>
+
+              {/* Guest Visit History & Timeline */}
+              <CheckInTimeline
+                events={scannedResult.events}
+                checkedInMap={scannedResult.checkedInMap || {}}
+                guestCount={scannedResult.guestCount}
+                passId={scannedResult.passId}
+                title="Guest Check-In &amp; Entry History"
+              />
 
               {/* Navigation & Reset for Next Scan */}
               <div className="grid grid-cols-2 gap-2 pt-2">
