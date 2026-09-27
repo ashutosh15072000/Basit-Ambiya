@@ -501,6 +501,53 @@ export default function App() {
     };
   }, []);
 
+  // Proactive background image and card asset pre-decoder for silky smooth, lag-free navigation
+  useEffect(() => {
+    const criticalImages = [
+      getAssetPath('assets/Basti&Ambiya11.webp'),
+      getAssetPath('assets/opening-circle-logo.webp'),
+      getAssetPath('assets/page 1.webp'),
+      getAssetPath('assets/page 1.png'),
+      getAssetPath('assets/page2.webp'),
+      getAssetPath('assets/page2.png'),
+      getAssetPath('assets/page3( 30 oct).webp'),
+      getAssetPath('assets/page3( 30 oct).png'),
+      getAssetPath('assets/page 4 (2 Nov).webp'),
+      getAssetPath('assets/page 4 (2 Nov).png'),
+    ];
+
+    const preloadNext = (idx = 0) => {
+      if (idx >= criticalImages.length) return;
+      const src = criticalImages[idx];
+      const img = new Image();
+      img.src = src;
+      img.decoding = 'async';
+      if (typeof (img as any).decode === 'function') {
+        (img as any)
+          .decode()
+          .catch(() => {})
+          .finally(() => {
+            if ('requestIdleCallback' in window) {
+              (window as any).requestIdleCallback(() => preloadNext(idx + 1));
+            } else {
+              setTimeout(() => preloadNext(idx + 1), 60);
+            }
+          });
+      } else {
+        (img as any).onload = () => preloadNext(idx + 1);
+        (img as any).onerror = () => preloadNext(idx + 1);
+      }
+    };
+
+    if (typeof window !== 'undefined') {
+      if ('requestIdleCallback' in window) {
+        (window as any).requestIdleCallback(() => preloadNext(0));
+      } else {
+        setTimeout(() => preloadNext(0), 120);
+      }
+    }
+  }, []);
+
   useEffect(() => {
     document.title = 'Basit Ali and Ambiya Basher — Wedding Invitation · October 2026';
     const metaDesc =

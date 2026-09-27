@@ -68,20 +68,20 @@ export const IntroVideo: React.FC<IntroVideoProps> = ({
   return (
     <div
       onClick={handleClick}
-      className={`fixed inset-0 w-full h-full bg-[#0d1f16] flex items-center justify-center cursor-pointer overflow-hidden z-50 select-none transition-all duration-400 ease-out ${
+      className={`fixed inset-0 w-full h-full bg-[#0d1f16] flex items-center justify-center cursor-pointer overflow-hidden z-50 select-none transform-gpu transition-all duration-500 ease-out will-change-[opacity,transform] ${
         opening ? 'scale-95 opacity-0 pointer-events-none' : 'opacity-100'
       }`}
     >
       <video
         ref={videoRef}
         src={`${getAssetPath('assets/intro-BHGRpJmm.mp4')}#t=0.1`}
-        className={`w-full h-full object-cover transition-opacity duration-500 ${
+        className={`w-full h-full object-cover transform-gpu transition-opacity duration-500 ${
           hasStarted ? 'opacity-100' : 'opacity-20'
         }`}
         playsInline
         muted
         onEnded={handleEnded}
-        preload="metadata"
+        preload="auto"
       />
 
       {/* Islamic Theme Presentation before click - Royal Circular Logo Medallion */}

@@ -60,14 +60,15 @@ export const AnimatedSection: React.FC<AnimatedSectionProps> = ({
     transitionDelay: `${delayMs}ms`,
     opacity: isVisible ? 1 : 0,
     transform: isVisible ? 'translate3d(0, 0, 0) scale(1)' : getInitialTransform(),
-    willChange: 'opacity, transform',
+    willChange: isVisible ? 'auto' : 'opacity, transform',
+    backfaceVisibility: 'hidden',
   };
 
   return (
     <Component
       ref={ref as any}
       id={id}
-      className={className}
+      className={`transform-gpu ${className}`}
       style={style}
     >
       {children}
