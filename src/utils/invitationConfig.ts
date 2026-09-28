@@ -312,9 +312,10 @@ export interface ParsedInvitationState {
 }
 
 /**
- * Validates and parses query parameters to verify if valid unguessable access key(s) were supplied.
- * If a visitor tampers with the URL or passes an unrecognized/invalid token,
- * `isTamperedOrInvalid` is flagged so the application securely hides the private wedding details.
+ * Validates and parses query parameters to verify if valid unguessable access key(s) or pass details were supplied.
+ * - Guest Pass URLs (?pass=..., ?checkin=..., ?guest=...) and event lists are first-class valid and open seamlessly.
+ * - Function codes (?invite=v8k29, ?invite=x8b4w, etc.) accurately filter ceremonies.
+ * - Tampered/invalid tokens without guest identification are securely intercepted.
  */
 export function validateAndParseInvitationUrl(searchStr: string = ''): ParsedInvitationState {
   if (typeof window === 'undefined' && !searchStr) {
@@ -343,60 +344,108 @@ export function validateAndParseInvitationUrl(searchStr: string = ''): ParsedInv
   const query = rawStr.includes('?') ? rawStr.slice(rawStr.indexOf('?') + 1) : rawStr;
   const params = new URLSearchParams(query);
 
-  // 1. Gather all values from common parameter keys
-  const paramKeys = [
+  // Check if this is a Guest Pass, RSVP Check-In QR scan, or Guest link
+  const hasGuestIdentity = Boolean(
+    params.get('pass') ||
+    params.get('passId') ||
+    params.get('pass_id') ||
+    params.get('p') ||
+    params.get('checkin') ||
+    params.get('check_in') ||
+    params.get('verify') ||
+    params.get('guest') ||
+    params.get('name') ||
+    params.get('to') ||
+    params.get('n')
+  );
+
+  const matched = new Set<number>();
+  const invalidTokens: string[] = [];
+  let paramSpecified = false;
+
+  // 1. Process Event / Ceremony name parameters (e.g. from QR codes: "Wedding Reception - Hotel Ramada, Wedding Reception - Radiant Resorts")
+  const eventKeys = ['event', 'events', 'ceremony', 'ceremonies', 'program', 'programs', 'e'];
+  for (const key of eventKeys) {
+    const rawEvents = params.getAll(key);
+    for (const rawEv of rawEvents) {
+      if (!rawEv || !rawEv.trim()) continue;
+      paramSpecified = true;
+      // Split by comma or pipe
+      const eventPhrases = rawEv.split(/[,|]+/).map((s) => s.trim()).filter(Boolean);
+      for (const phrase of eventPhrases) {
+        const lower = phrase.toLowerCase();
+        if (matchesFunction1(lower)) {
+          matched.add(1);
+        }
+        if (matchesFunction2(lower)) {
+          matched.add(2);
+        }
+        if (matchesFunction3(lower)) {
+          matched.add(3);
+        }
+        if (lower.includes('all') || lower === '0') {
+          matched.add(1);
+          matched.add(2);
+          matched.add(3);
+        }
+      }
+    }
+  }
+
+  // 2. Process Security / Function Tokens (e.g. ?invite=v8k29, ?invite=x8b4w, ?function=rukhsati, ?f=1,2)
+  const tokenKeys = [
     'invite',
     'access',
     'token',
     'code',
     'key',
-    'pass',
-    'c',
-    'v',
     'function',
     'functions',
     'function_name',
     'functionname',
     'f',
     'fn',
-    'event',
-    'events',
-    'ceremony',
-    'ceremonies',
-    'program',
-    'programs',
     'invitation',
     'invited_to',
   ];
 
-  const rawValues: string[] = [];
-  let paramSpecified = false;
-
-  for (const key of paramKeys) {
+  const rawTokens: string[] = [];
+  for (const key of tokenKeys) {
     const vals = params.getAll(key);
     for (const v of vals) {
       if (v !== null && v !== undefined && v.trim() !== '') {
-        rawValues.push(v);
+        rawTokens.push(v);
         paramSpecified = true;
       }
     }
   }
 
-  // 2. Check if any standalone query flag itself is a function alias or code
+  // 3. Check standalone flags (e.g. ?v8k29 or ?rukhsati or ?ramada)
   if (!paramSpecified) {
     for (const key of params.keys()) {
       const lower = key.toLowerCase().trim();
-      // Ignore general query flags
       if (
         [
           'guest',
           'name',
           'to',
           'n',
+          'pass',
+          'passid',
+          'pass_id',
+          'p',
+          'checkin',
+          'check_in',
+          'verify',
+          'guests',
+          'count',
+          'guest_count',
+          'g',
           'admin',
           'host',
           'usher',
           'id',
+          'v',
           'set_gh_token',
           'set_gh_owner',
           'set_gh_repo',
@@ -420,14 +469,89 @@ export function validateAndParseInvitationUrl(searchStr: string = ''): ParsedInv
         lower === 'w9v4k' ||
         lower === 'all'
       ) {
-        rawValues.push(lower);
+        rawTokens.push(lower);
         paramSpecified = true;
       }
     }
   }
 
-  // If no function parameter was provided at all in URL, open the complete wedding celebration
-  if (!paramSpecified || rawValues.length === 0) {
+  if (rawTokens.length > 0) {
+    const combinedRaw = rawTokens.join(',').toLowerCase();
+    if (
+      combinedRaw.includes('all') ||
+      combinedRaw.includes('w9v4k') ||
+      combinedRaw.includes('royal2026') ||
+      combinedRaw === '0'
+    ) {
+      matched.add(1);
+      matched.add(2);
+      matched.add(3);
+    } else {
+      const splitTokens = combinedRaw
+        .split(/[,|+;&\s]+/)
+        .map((t) => t.trim().replace(/^and$/, ''))
+        .filter(Boolean);
+
+      for (const token of splitTokens) {
+        let tokenMatched = false;
+
+        if (token === 'x8b4w' || token === 'rkrm12' || token === 'j7m1n5') {
+          matched.add(1);
+          matched.add(2);
+          tokenMatched = true;
+        } else if (token === 'n3q9f' || token === 'rmrd23' || token === 'c8v2x4') {
+          matched.add(2);
+          matched.add(3);
+          tokenMatched = true;
+        } else if (token === 'g5t2k' || token === 'rkrd13' || token === 'l4p9z3') {
+          matched.add(1);
+          matched.add(3);
+          tokenMatched = true;
+        } else if (token === 'w9v4k' || token === 'all') {
+          matched.add(1);
+          matched.add(2);
+          matched.add(3);
+          tokenMatched = true;
+        } else if (matchesFunction1(token)) {
+          matched.add(1);
+          tokenMatched = true;
+        } else if (matchesFunction2(token)) {
+          matched.add(2);
+          tokenMatched = true;
+        } else if (matchesFunction3(token)) {
+          matched.add(3);
+          tokenMatched = true;
+        } else {
+          const norm = normalizeKey(token);
+          if ((norm === 'reception' || norm === 'receptions') && !norm.includes('ramada') && !norm.includes('radiant')) {
+            matched.add(2);
+            matched.add(3);
+            tokenMatched = true;
+          }
+        }
+
+        if (!tokenMatched) {
+          invalidTokens.push(token);
+        }
+      }
+    }
+  }
+
+  // If this is a valid Guest Pass, QR Check-In, or guest URL, it is NEVER tampered/invalid
+  if (hasGuestIdentity) {
+    const finalFunctionIds = matched.size > 0 ? Array.from(matched).sort((a, b) => a - b) : [1, 2, 3];
+    return {
+      isValid: true,
+      isTamperedOrInvalid: false,
+      functionIds: finalFunctionIds,
+      invalidTokens: [],
+      paramSpecified: true,
+      rawSearch: rawStr,
+    };
+  }
+
+  // If no function parameters were specified, default to full wedding celebration
+  if (!paramSpecified) {
     return {
       isValid: true,
       isTamperedOrInvalid: false,
@@ -438,83 +562,8 @@ export function validateAndParseInvitationUrl(searchStr: string = ''): ParsedInv
     };
   }
 
-  // Check if visitor requested "all"
-  const combinedRaw = rawValues.join(',').toLowerCase();
-  if (
-    combinedRaw.includes('all') ||
-    combinedRaw.includes('w9v4k') ||
-    combinedRaw.includes('royal2026') ||
-    combinedRaw === '0'
-  ) {
-    return {
-      isValid: true,
-      isTamperedOrInvalid: false,
-      functionIds: [1, 2, 3],
-      invalidTokens: [],
-      paramSpecified: true,
-      rawSearch: rawStr,
-    };
-  }
-
-  // Split tokens by comma, pipe, slash, plus, or 'and'
-  const tokens = combinedRaw
-    .split(/[,|+;&\s]+/)
-    .map((t) => t.trim().replace(/^and$/, ''))
-    .filter(Boolean);
-
-  const matched = new Set<number>();
-  const invalidTokens: string[] = [];
-
-  for (const token of tokens) {
-    let tokenMatched = false;
-
-    // Check Multi-Function random tokens
-    if (token === 'x8b4w' || token === 'rkrm12' || token === 'j7m1n5') {
-      matched.add(1);
-      matched.add(2);
-      tokenMatched = true;
-    } else if (token === 'n3q9f' || token === 'rmrd23' || token === 'c8v2x4') {
-      matched.add(2);
-      matched.add(3);
-      tokenMatched = true;
-    } else if (token === 'g5t2k' || token === 'rkrd13' || token === 'l4p9z3') {
-      matched.add(1);
-      matched.add(3);
-      tokenMatched = true;
-    } else if (token === 'w9v4k' || token === 'all') {
-      return {
-        isValid: true,
-        isTamperedOrInvalid: false,
-        functionIds: [1, 2, 3],
-        invalidTokens: [],
-        paramSpecified: true,
-        rawSearch: rawStr,
-      };
-    } else if (matchesFunction1(token)) {
-      matched.add(1);
-      tokenMatched = true;
-    } else if (matchesFunction2(token)) {
-      matched.add(2);
-      tokenMatched = true;
-    } else if (matchesFunction3(token)) {
-      matched.add(3);
-      tokenMatched = true;
-    } else {
-      const norm = normalizeKey(token);
-      if ((norm === 'reception' || norm === 'receptions') && !norm.includes('ramada') && !norm.includes('radiant')) {
-        matched.add(2);
-        matched.add(3);
-        tokenMatched = true;
-      }
-    }
-
-    if (!tokenMatched) {
-      invalidTokens.push(token);
-    }
-  }
-
-  // If user passed a function parameter but specified invalid/unrecognized token(s) or none matched:
-  if (matched.size === 0 || invalidTokens.length > 0) {
+  // If a function parameter was explicitly given but failed matching and has invalid tokens without guest identity:
+  if (matched.size === 0 || (invalidTokens.length > 0 && matched.size === 0)) {
     return {
       isValid: false,
       isTamperedOrInvalid: true,
@@ -529,7 +578,7 @@ export function validateAndParseInvitationUrl(searchStr: string = ''): ParsedInv
   return {
     isValid: true,
     isTamperedOrInvalid: false,
-    functionIds: result,
+    functionIds: result.length > 0 ? result : [1, 2, 3],
     invalidTokens: [],
     paramSpecified: true,
     rawSearch: rawStr,
