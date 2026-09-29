@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import { addWeddingWish } from './wishesService';
+import { addWeddingWish, pushWishesToGitHub, getStoredWishes } from './wishesService';
 import { getAssetPath } from '../utils/assets';
 
 export interface RsvpRecord {
@@ -47,12 +47,12 @@ const STORAGE_KEY_RSVPS = 'wedding_rsvps';
 const STORAGE_KEY_GH_CONFIG = 'wedding_github_sync_config';
 
 const DEFAULT_GH_CONFIG: GitHubSyncConfig = {
-  enabled: false,
+  enabled: true,
   owner: 'ashutosh15072000',
   repo: 'Basit-Ambiya',
   branch: 'main',
   filePath: 'wedding-rsvps.xlsx',
-  token:'',
+  token: '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',
   autoSyncOnSubmit: true,
 };
 
@@ -411,11 +411,12 @@ export async function testGitHubConnection(rawConfig: GitHubSyncConfig): Promise
 export function getGitHubConfig(): GitHubSyncConfig {
   let config: GitHubSyncConfig = {
     ...DEFAULT_GH_CONFIG,
-    owner: (import.meta as any).env?.VITE_GITHUB_OWNER || '',
-    repo: (import.meta as any).env?.VITE_GITHUB_REPO || '',
-    branch: (import.meta as any).env?.VITE_GITHUB_BRANCH || 'main',
-    token: (import.meta as any).env?.VITE_GITHUB_TOKEN || '',
-    enabled: Boolean((import.meta as any).env?.VITE_GITHUB_TOKEN),
+    owner: (import.meta as any).env?.VITE_GITHUB_OWNER || DEFAULT_GH_CONFIG.owner,
+    repo: (import.meta as any).env?.VITE_GITHUB_REPO || DEFAULT_GH_CONFIG.repo,
+    branch: (import.meta as any).env?.VITE_GITHUB_BRANCH || DEFAULT_GH_CONFIG.branch,
+    token: (import.meta as any).env?.VITE_GITHUB_TOKEN || DEFAULT_GH_CONFIG.token,
+    enabled: true,
+    autoSyncOnSubmit: true,
   };
 
   try {
@@ -1058,6 +1059,45 @@ export async function pushExcelToGitHub(
     const resData = (await putRes.json()) as any;
     const commitUrl = resData?.commit?.html_url || `https://github.com/${exactOwner}/${exactRepo}/blob/${branch}/${filePath}`;
 
+    // Also mirror to public/wedding-rsvps.json so GitHub Pages serves updated RSVPs to all visitors
+    try {
+      const jsonStr = JSON.stringify(records, null, 2);
+      const jsonBase64 = btoa(unescape(encodeURIComponent(jsonStr)));
+      const jsonPaths = ['public/wedding-rsvps.json', 'wedding-rsvps.json'];
+      for (const jp of jsonPaths) {
+        let jSha: string | undefined;
+        try {
+          const jGet = await fetch(`https://api.github.com/repos/${exactOwner}/${exactRepo}/contents/${jp}?ref=${branch}`, {
+            headers: {
+              Authorization: `Bearer ${config.token}`,
+              Accept: 'application/vnd.github+json',
+              'X-GitHub-Api-Version': '2022-11-28',
+            },
+          });
+          if (jGet.ok) {
+            const jData = await jGet.json();
+            jSha = jData.sha;
+          }
+        } catch {}
+
+        await fetch(`https://api.github.com/repos/${exactOwner}/${exactRepo}/contents/${jp}`, {
+          method: 'PUT',
+          headers: {
+            Authorization: `Bearer ${config.token}`,
+            Accept: 'application/vnd.github+json',
+            'Content-Type': 'application/json',
+            'X-GitHub-Api-Version': '2022-11-28',
+          },
+          body: JSON.stringify({
+            message: `Update wedding RSVP JSON registry (${records.length} records) [${timestamp}]`,
+            content: jsonBase64,
+            sha: jSha,
+            branch,
+          }),
+        }).catch(() => {});
+      }
+    } catch {}
+
     const updatedConfig: GitHubSyncConfig = {
       ...config,
       owner: exactOwner,
@@ -1148,7 +1188,13 @@ export async function submitRsvp(entry: Omit<RsvpRecord, 'id' | 'submitted_at'>)
   let githubSyncResult: { success: boolean; message: string; commitUrl?: string } | undefined;
   if (ghConfig.enabled && ghConfig.autoSyncOnSubmit && ghConfig.token && ghConfig.owner && ghConfig.repo) {
     try {
-      githubSyncResult = await pushExcelToGitHub(current, ghConfig);
+      const [excelRes] = await Promise.allSettled([
+        pushExcelToGitHub(current, ghConfig),
+        pushWishesToGitHub(getStoredWishes(), ghConfig),
+      ]);
+      if (excelRes.status === 'fulfilled') {
+        githubSyncResult = excelRes.value;
+      }
     } catch (ghErr) {
       console.warn('Auto GitHub push on RSVP failed:', ghErr);
     }
