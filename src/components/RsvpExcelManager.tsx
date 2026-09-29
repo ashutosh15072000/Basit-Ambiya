@@ -96,11 +96,11 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [ghConfig, setGhConfig] = useState<GitHubSyncConfig>(getGitHubConfig());
   const [showSettings, setShowSettings] = useState(false);
-  const [formOwner, setFormOwner] = useState(ghConfig.owner || 'auraweddingsandevents21-lang');
+  const [formOwner, setFormOwner] = useState(ghConfig.owner || 'ashutosh15072000');
   const [formRepo, setFormRepo] = useState(ghConfig.repo || 'Basit-Ambiya');
   const [formBranch, setFormBranch] = useState(ghConfig.branch || 'main');
   const [formFilePath, setFormFilePath] = useState(ghConfig.filePath || 'wedding-rsvps.xlsx');
-  const [formToken, setFormToken] = useState(ghConfig.token || '');
+  const [formToken, setFormToken] = useState(ghConfig.token || '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');
   const [formAutoSync, setFormAutoSync] = useState(ghConfig.autoSyncOnSubmit !== false);
   const [showTokenText, setShowTokenText] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
