@@ -752,6 +752,33 @@ export function buildInviteUrl(
 }
 
 /**
+ * Generates the official Wedding Entry & Quick Check-in Pass WhatsApp message
+ * exactly matching the royal format with emoji bullets and guest details.
+ */
+export function buildGuestPassWhatsAppMessage(
+  guestName: string,
+  passId: string,
+  guestCount: number,
+  events: string[],
+  passUrl: string
+): string {
+  const cleanEvents =
+    events && events.length > 0 ? events.join(', ') : 'All Invited Wedding Celebrations';
+
+  return (
+    `🎟️ *WEDDING ENTRY & QUICK CHECK-IN PASS*\n\n` +
+    `👑 *Basit Ali & Ambiya Basher Wedding Celebrations*\n\n` +
+    `👤 *Honored Guest:* ${guestName.trim().toUpperCase()}\n` +
+    `🆔 *Pass ID:* ${passId}\n` +
+    `👥 *Admitted:* ${guestCount} ${guestCount === 1 ? 'Guest' : 'Guests'}\n` +
+    `✨ *Ceremonies:* ${cleanEvents}\n\n` +
+    `📱 *Show your verified digital pass & QR code at venue entrance:*\n` +
+    `${passUrl}\n\n` +
+    `Awaiting your noble presence & Duas! 🌸`
+  );
+}
+
+/**
  * Generates an elegant WhatsApp invitation message pre-filled with the guest's name,
  * invited ceremonies, and customized link.
  */
@@ -792,3 +819,4 @@ export function buildWhatsAppMessage(
     `Awaiting your noble presence, love, and prayers! 🌸`
   );
 }
+
