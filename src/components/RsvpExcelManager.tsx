@@ -96,6 +96,13 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [ghConfig, setGhConfig] = useState<GitHubSyncConfig>(getGitHubConfig());
   const [showSettings, setShowSettings] = useState(false);
+  const [formOwner, setFormOwner] = useState(ghConfig.owner || 'auraweddingsandevents21-lang');
+  const [formRepo, setFormRepo] = useState(ghConfig.repo || 'Basit-Ambiya');
+  const [formBranch, setFormBranch] = useState(ghConfig.branch || 'main');
+  const [formFilePath, setFormFilePath] = useState(ghConfig.filePath || 'wedding-rsvps.xlsx');
+  const [formToken, setFormToken] = useState(ghConfig.token || '');
+  const [formAutoSync, setFormAutoSync] = useState(ghConfig.autoSyncOnSubmit !== false);
+  const [showTokenText, setShowTokenText] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isDraggingFile, setIsDraggingFile] = useState(false);
@@ -634,7 +641,15 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
 
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
-    const sanitized = sanitizeGitHubConfig(ghConfig);
+    const sanitized = sanitizeGitHubConfig({
+      owner: formOwner,
+      repo: formRepo,
+      branch: formBranch,
+      filePath: formFilePath,
+      token: formToken,
+      enabled: Boolean(formToken.trim()),
+      autoSyncOnSubmit: formAutoSync,
+    });
     saveGitHubConfig(sanitized);
     setGhConfig(sanitized);
     setShowSettings(false);
@@ -666,7 +681,7 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
       } else {
         setSyncFeedback({
           type: 'error',
-          message: `Saved settings, but initial sync had notice: ${result.message}`,
+          message: `Saved settings, but sync notice: ${result.message}`,
         });
       }
     } catch (syncErr: any) {
@@ -681,7 +696,16 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
   const handleTestConnection = async () => {
     setIsTestingConnection(true);
     setTestFeedback({ type: null, message: '' });
-    const result = await testGitHubConnection(ghConfig);
+    const cfgToTest = sanitizeGitHubConfig({
+      owner: formOwner,
+      repo: formRepo,
+      branch: formBranch,
+      filePath: formFilePath,
+      token: formToken,
+      enabled: true,
+      autoSyncOnSubmit: formAutoSync,
+    });
+    const result = await testGitHubConnection(cfgToTest);
     setIsTestingConnection(false);
     if (result.success) {
       setTestFeedback({
@@ -689,14 +713,9 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
         message: result.message,
       });
       if (result.repoDetails) {
-        const updated = sanitizeGitHubConfig({
-          ...ghConfig,
-          owner: result.repoDetails.owner || ghConfig.owner,
-          repo: result.repoDetails.repo || ghConfig.repo,
-          branch: result.repoDetails.default_branch || ghConfig.branch,
-        });
-        setGhConfig(updated);
-        saveGitHubConfig(updated);
+        if (result.repoDetails.owner) setFormOwner(result.repoDetails.owner);
+        if (result.repoDetails.repo) setFormRepo(result.repoDetails.repo);
+        if (result.repoDetails.default_branch) setFormBranch(result.repoDetails.default_branch);
       }
     } else {
       setTestFeedback({
@@ -707,11 +726,21 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
   };
 
   const handleSyncToGitHub = async () => {
-    if (!ghConfig.owner || !ghConfig.repo || !ghConfig.token) {
+    const activeCfg = sanitizeGitHubConfig({
+      owner: formOwner || ghConfig.owner,
+      repo: formRepo || ghConfig.repo,
+      branch: formBranch || ghConfig.branch,
+      filePath: formFilePath || ghConfig.filePath,
+      token: formToken || ghConfig.token,
+      enabled: Boolean(formToken || ghConfig.token),
+      autoSyncOnSubmit: formAutoSync,
+    });
+
+    if (!activeCfg.owner || !activeCfg.repo || !activeCfg.token) {
       setShowSettings(true);
       setSyncFeedback({
         type: 'error',
-        message: 'Please provide your GitHub Repository details and Personal Access Token first.',
+        message: 'Please provide your GitHub Repository details and Personal Access Token in the configuration drawer below.',
       });
       return;
     }
@@ -719,8 +748,8 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
     setIsSyncing(true);
     setSyncFeedback({ type: null, message: '' });
 
-    const result = await pushExcelToGitHub(rsvps, ghConfig);
-    const wishesResult = await pushWishesToGitHub(getStoredWishes(), ghConfig).catch(() => ({
+    const result = await pushExcelToGitHub(rsvps, activeCfg);
+    const wishesResult = await pushWishesToGitHub(getStoredWishes(), activeCfg).catch(() => ({
       success: false,
       message: '',
       commitUrl: undefined as string | undefined,
@@ -1141,9 +1170,9 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
                   </label>
                   <input
                     type="text"
-                    value={ghConfig.owner}
-                    onChange={(e) => setGhConfig({ ...ghConfig, owner: e.target.value })}
-                    placeholder="e.g. ashutoshs019"
+                    value={formOwner}
+                    onChange={(e) => setFormOwner(e.target.value)}
+                    placeholder="e.g. auraweddingsandevents21-lang"
                     className="w-full px-3 py-2 text-sm bg-[#faf8f5] border border-gold-soft/80 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-[#1b4332]"
                   />
                 </div>
@@ -1154,9 +1183,9 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
                   </label>
                   <input
                     type="text"
-                    value={ghConfig.repo}
-                    onChange={(e) => setGhConfig({ ...ghConfig, repo: e.target.value })}
-                    placeholder="e.g. wedding-invitation"
+                    value={formRepo}
+                    onChange={(e) => setFormRepo(e.target.value)}
+                    placeholder="e.g. Basit-Ambiya"
                     className="w-full px-3 py-2 text-sm bg-[#faf8f5] border border-gold-soft/80 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-[#1b4332]"
                   />
                 </div>
@@ -1167,8 +1196,8 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
                   </label>
                   <input
                     type="text"
-                    value={ghConfig.branch}
-                    onChange={(e) => setGhConfig({ ...ghConfig, branch: e.target.value })}
+                    value={formBranch}
+                    onChange={(e) => setFormBranch(e.target.value)}
                     placeholder="main or master"
                     className="w-full px-3 py-2 text-sm bg-[#faf8f5] border border-gold-soft/80 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-[#1b4332]"
                   />
@@ -1180,24 +1209,36 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
                   </label>
                   <input
                     type="text"
-                    value={ghConfig.filePath}
-                    onChange={(e) => setGhConfig({ ...ghConfig, filePath: e.target.value })}
+                    value={formFilePath}
+                    onChange={(e) => setFormFilePath(e.target.value)}
                     placeholder="wedding-rsvps.xlsx"
                     className="w-full px-3 py-2 text-sm bg-[#faf8f5] border border-gold-soft/80 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-[#1b4332]"
                   />
                 </div>
 
                 <div className="sm:col-span-2">
-                  <label className="block text-xs font-cinzel font-semibold text-foreground/80 mb-1">
-                    GitHub Personal Access Token (PAT)
-                  </label>
-                  <input
-                    type="password"
-                    value={ghConfig.token}
-                    onChange={(e) => setGhConfig({ ...ghConfig, token: e.target.value, enabled: true })}
-                    placeholder="ghp_xxxxxxxxxxxxxxxxxxxx (Requires 'repo' or 'contents:write' permission)"
-                    className="w-full px-3 py-2 text-sm bg-[#faf8f5] border border-gold-soft/80 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-[#1b4332]"
-                  />
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-cinzel font-semibold text-foreground/80">
+                      GitHub Personal Access Token (PAT)
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setShowTokenText(!showTokenText)}
+                      className="inline-flex items-center gap-1 text-[11px] font-cinzel font-bold text-stone-600 hover:text-stone-900 cursor-pointer"
+                    >
+                      {showTokenText ? <EyeOff className="w-3.5 h-3.5 text-stone-700" /> : <Eye className="w-3.5 h-3.5 text-stone-700" />}
+                      <span>{showTokenText ? 'Hide Token' : 'Show Token'}</span>
+                    </button>
+                  </div>
+                  <div className="relative">
+                    <input
+                      type={showTokenText ? 'text' : 'password'}
+                      value={formToken}
+                      onChange={(e) => setFormToken(e.target.value)}
+                      placeholder="Paste your GitHub token here (e.g. ghp_...)"
+                      className="w-full pl-3 pr-10 py-2 text-sm bg-[#faf8f5] border border-gold-soft/80 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-[#1b4332] font-mono"
+                    />
+                  </div>
                   <div className="flex items-center justify-between mt-1.5 flex-wrap gap-2">
                     <p className="text-[11px] text-foreground/60">
                       Requires <strong>repo</strong> (Classic PAT) or <strong>Contents: Read &amp; write</strong> (Fine-grained).
@@ -1239,8 +1280,8 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
                 <input
                   type="checkbox"
                   id="autoSyncCheck"
-                  checked={ghConfig.autoSyncOnSubmit}
-                  onChange={(e) => setGhConfig({ ...ghConfig, autoSyncOnSubmit: e.target.checked })}
+                  checked={formAutoSync}
+                  onChange={(e) => setFormAutoSync(e.target.checked)}
                   className="rounded text-emerald-800 focus:ring-emerald-700 w-4 h-4 cursor-pointer"
                 />
                 <label htmlFor="autoSyncCheck" className="text-xs font-cinzel text-foreground font-semibold cursor-pointer">
