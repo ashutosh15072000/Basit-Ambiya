@@ -48,7 +48,7 @@ const STORAGE_KEY_GH_CONFIG = 'wedding_github_sync_config';
 
 const DEFAULT_GH_CONFIG: GitHubSyncConfig = {
   enabled: false,
-  owner: 'auraweddingsandevents21-lang',
+  owner: 'ashutosh15072000',
   repo: 'Basit-Ambiya',
   branch: 'main',
   filePath: 'wedding-rsvps.xlsx',
