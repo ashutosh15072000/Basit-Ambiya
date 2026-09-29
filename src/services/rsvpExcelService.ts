@@ -1,5 +1,6 @@
 import * as XLSX from 'xlsx';
 import { addWeddingWish } from './wishesService';
+import { getAssetPath } from '../utils/assets';
 
 export interface RsvpRecord {
   id: string;
@@ -46,12 +47,12 @@ const STORAGE_KEY_RSVPS = 'wedding_rsvps';
 const STORAGE_KEY_GH_CONFIG = 'wedding_github_sync_config';
 
 const DEFAULT_GH_CONFIG: GitHubSyncConfig = {
-  enabled: false,
-  owner: '',
-  repo: '',
+  enabled: true,
+  owner: 'ashutosh15072000',
+  repo: 'Basti-Ambiya',
   branch: 'main',
   filePath: 'wedding-rsvps.xlsx',
-  token: '',
+  token: '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',
   autoSyncOnSubmit: true,
 };
 
@@ -170,6 +171,118 @@ export function saveAllRsvps(rsvps: RsvpRecord[]): void {
 }
 
 /**
+ * Fetches all RSVPs from backend API and GitHub so any phone / device displays all submitted responses in real time
+ */
+export async function fetchAllRsvps(): Promise<RsvpRecord[]> {
+  const localRsvps = getStoredRsvps();
+  let remoteRecords: RsvpRecord[] = [];
+
+  // 1. Try server API endpoint
+  try {
+    const res = await fetch('/api/rsvp', { cache: 'no-store' });
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data.rsvps) && data.rsvps.length > 0) {
+        remoteRecords = data.rsvps;
+      }
+    }
+  } catch {
+    // static host or offline
+  }
+
+  // 2. Try static public/wedding-rsvps.json if on GitHub Pages
+  if (remoteRecords.length === 0) {
+    try {
+      const staticUrl = `${getAssetPath('wedding-rsvps.json')}?t=${Date.now()}`;
+      const res = await fetch(staticUrl, { cache: 'no-store' });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data) && data.length > 0) {
+          remoteRecords = data;
+        }
+      }
+    } catch {}
+  }
+
+  // 3. Try GitHub Raw file if repository is configured
+  if (remoteRecords.length === 0) {
+    const ghConfig = getGitHubConfig();
+    if (ghConfig.owner && ghConfig.repo) {
+      try {
+        const rawUrl = `https://raw.githubusercontent.com/${ghConfig.owner}/${ghConfig.repo}/${ghConfig.branch || 'main'}/public/wedding-rsvps.json?t=${Date.now()}`;
+        const res = await fetch(rawUrl, { cache: 'no-store' });
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data) && data.length > 0) {
+            remoteRecords = data;
+          }
+        }
+      } catch {}
+    }
+  }
+
+  // If remote records found, merge with local records so no submissions are ever lost
+  if (remoteRecords.length > 0) {
+    const mergedMap = new Map<string, RsvpRecord>();
+
+    // Start with local records
+    localRsvps.forEach((r) => {
+      const key = (r.id || `${r.guest_name}-${r.phone || ''}`).toLowerCase();
+      mergedMap.set(key, r);
+    });
+
+    // Merge remote records
+    remoteRecords.forEach((r, idx) => {
+      const events = Array.isArray(r.events) ? r.events : [];
+      const checkedInEvents = Array.isArray(r.checked_in_events) ? r.checked_in_events : [];
+      const checkedInMap: Record<string, string> = r.checked_in_events_map || {};
+
+      const standardized: RsvpRecord = {
+        id: r.id || `rsvp-rem-${idx}-${Date.now()}`,
+        submitted_at: r.submitted_at || new Date().toISOString(),
+        guest_name: r.guest_name || 'Anonymous Guest',
+        phone: r.phone || '',
+        attending: r.attending === 'no' ? 'no' : 'yes',
+        guest_count: Number(r.guest_count) || (r.attending === 'no' ? 0 : 1),
+        events,
+        dietary: r.dietary || '',
+        message: r.message || '',
+        checked_in: Boolean(r.checked_in) || checkedInEvents.length > 0 || Object.keys(checkedInMap).length > 0,
+        checked_in_at: r.checked_in_at || null,
+        checked_in_pass_id: r.checked_in_pass_id || null,
+        checked_in_events: checkedInEvents.length > 0 ? checkedInEvents : Object.keys(checkedInMap),
+        checked_in_events_map: checkedInMap,
+        checked_in_guest_count: typeof r.checked_in_guest_count === 'number' ? r.checked_in_guest_count : r.guest_count || 1,
+      };
+
+      const key = (standardized.id || `${standardized.guest_name}-${standardized.phone || ''}`).toLowerCase();
+      const existing = mergedMap.get(key);
+      if (existing) {
+        mergedMap.set(key, {
+          ...existing,
+          ...standardized,
+          checked_in_events_map: { ...(existing.checked_in_events_map || {}), ...(standardized.checked_in_events_map || {}) },
+          checked_in: existing.checked_in || standardized.checked_in,
+        });
+      } else {
+        mergedMap.set(key, standardized);
+      }
+    });
+
+    const finalMerged = Array.from(mergedMap.values()).sort((a, b) => {
+      const timeA = a.submitted_at ? new Date(a.submitted_at).getTime() : 0;
+      const timeB = b.submitted_at ? new Date(b.submitted_at).getTime() : 0;
+      return timeB - timeA;
+    });
+
+    saveAllRsvps(finalMerged);
+    return finalMerged;
+  }
+
+  return localRsvps;
+}
+
+/**
  * Sanitizes GitHub input fields to avoid common formatting mistakes (URL pastes, extra slashes, etc.)
  */
 export function sanitizeGitHubConfig(cfg: Partial<GitHubSyncConfig>): GitHubSyncConfig {
@@ -215,6 +328,8 @@ export async function testGitHubConnection(rawConfig: GitHubSyncConfig): Promise
   message: string;
   repoDetails?: {
     full_name: string;
+    owner?: string;
+    repo?: string;
     private: boolean;
     default_branch: string;
   };
@@ -267,13 +382,19 @@ export async function testGitHubConnection(rawConfig: GitHubSyncConfig): Promise
     }
 
     const repoData = (await res.json()) as any;
+    const actualOwner = repoData.owner?.login || (repoData.full_name ? repoData.full_name.split('/')[0] : config.owner);
+    const actualRepo = repoData.name || (repoData.full_name ? repoData.full_name.split('/')[1] : config.repo);
+    const defaultBranch = repoData.default_branch || 'main';
+
     return {
       success: true,
-      message: `Connection successful! Connected to "${repoData.full_name}" (${repoData.private ? 'Private' : 'Public'}, default branch: ${repoData.default_branch || 'main'}).`,
+      message: `Connection successful! Connected to "${repoData.full_name}" (${repoData.private ? 'Private' : 'Public'}, default branch: ${defaultBranch}).`,
       repoDetails: {
         full_name: repoData.full_name,
+        owner: actualOwner,
+        repo: actualRepo,
         private: repoData.private,
-        default_branch: repoData.default_branch || 'main',
+        default_branch: defaultBranch,
       },
     };
   } catch (err: any) {
@@ -332,12 +453,19 @@ export function getGitHubConfig(): GitHubSyncConfig {
 }
 
 /**
- * Saves GitHub sync settings to localStorage
+ * Saves GitHub sync settings to localStorage and server
  */
 export function saveGitHubConfig(config: GitHubSyncConfig): void {
   try {
     const sanitized = sanitizeGitHubConfig(config);
     localStorage.setItem(STORAGE_KEY_GH_CONFIG, JSON.stringify(sanitized));
+
+    // Also persist to server so all users & automated RSVP submissions use this config
+    fetch('/api/github-config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(sanitized),
+    }).catch(() => {});
   } catch (err) {
     console.error('Error saving github config:', err);
   }
@@ -795,10 +923,41 @@ export async function pushExcelToGitHub(
     };
   }
 
+  let exactOwner = config.owner;
+  let exactRepo = config.repo;
+  let branch = config.branch || 'main';
+
+  // 1. Proactively query repo metadata to resolve transferred repos or org ownership
+  try {
+    const metaRes = await fetch(`https://api.github.com/repos/${config.owner}/${config.repo}`, {
+      headers: {
+        Authorization: `Bearer ${config.token}`,
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
+    });
+
+    if (metaRes.ok) {
+      const meta = (await metaRes.json()) as any;
+      if (meta.owner?.login) {
+        exactOwner = meta.owner.login;
+      } else if (meta.full_name && meta.full_name.includes('/')) {
+        exactOwner = meta.full_name.split('/')[0];
+      }
+      if (meta.name) {
+        exactRepo = meta.name;
+      }
+      if (meta.default_branch && (!config.branch || config.branch === 'main' || config.branch === 'master')) {
+        branch = meta.default_branch;
+      }
+    }
+  } catch (e) {
+    // Continue with sanitized config
+  }
+
   const base64Content = generateExcelBase64(records);
   const filePath = config.filePath || 'wedding-rsvps.xlsx';
-  let branch = config.branch || 'main';
-  const apiUrl = `https://api.github.com/repos/${config.owner}/${config.repo}/contents/${filePath}`;
+  const apiUrl = `https://api.github.com/repos/${exactOwner}/${exactRepo}/contents/${filePath}`;
 
   let existingSha: string | undefined = undefined;
   try {
@@ -820,7 +979,7 @@ export async function pushExcelToGitHub(
       };
     } else if (getRes.status === 404) {
       // Check if branch exists, or if 'main' / 'master' fallback is needed
-      const branchRes = await fetch(`https://api.github.com/repos/${config.owner}/${config.repo}/branches/${branch}`, {
+      const branchRes = await fetch(`https://api.github.com/repos/${exactOwner}/${exactRepo}/branches/${branch}`, {
         headers: {
           Authorization: `Bearer ${config.token}`,
           Accept: 'application/vnd.github+json',
@@ -830,7 +989,7 @@ export async function pushExcelToGitHub(
 
       if (branchRes && branchRes.status === 404) {
         const altBranch = branch === 'main' ? 'master' : 'main';
-        const altRes = await fetch(`https://api.github.com/repos/${config.owner}/${config.repo}/branches/${altBranch}`, {
+        const altRes = await fetch(`https://api.github.com/repos/${exactOwner}/${exactRepo}/branches/${altBranch}`, {
           headers: {
             Authorization: `Bearer ${config.token}`,
             Accept: 'application/vnd.github+json',
@@ -887,7 +1046,7 @@ export async function pushExcelToGitHub(
       if (putRes.status === 401) {
         errorMsg = 'GitHub Token unauthorized (401). Please check Personal Access Token.';
       } else if (putRes.status === 404) {
-        errorMsg = `Repository or branch "${config.owner}/${config.repo} (${branch})" not found. Please verify repo name.`;
+        errorMsg = `Repository or branch "${exactOwner}/${exactRepo} (${branch})" not found. Please verify repo name.`;
       } else if (putRes.status === 409) {
         errorMsg = 'Commit SHA conflict (409). Please click Sync again to re-align with latest GitHub commit.';
       } else if (putRes.status === 403) {
@@ -897,10 +1056,12 @@ export async function pushExcelToGitHub(
     }
 
     const resData = (await putRes.json()) as any;
-    const commitUrl = resData?.commit?.html_url || `https://github.com/${config.owner}/${config.repo}/blob/${branch}/${filePath}`;
+    const commitUrl = resData?.commit?.html_url || `https://github.com/${exactOwner}/${exactRepo}/blob/${branch}/${filePath}`;
 
     const updatedConfig: GitHubSyncConfig = {
       ...config,
+      owner: exactOwner,
+      repo: exactRepo,
       branch,
       lastSyncedAt: new Date().toISOString(),
       lastCommitUrl: commitUrl,
@@ -909,14 +1070,34 @@ export async function pushExcelToGitHub(
 
     return {
       success: true,
-      message: `Successfully synced Excel spreadsheet (${filePath}) to GitHub (${config.owner}/${config.repo} on branch "${branch}")!`,
+      message: `Successfully synced Excel spreadsheet (${filePath}) to GitHub (${exactOwner}/${exactRepo} on branch "${branch}")!`,
       commitUrl,
     };
   } catch (err: any) {
-    console.error('Failed to commit Excel file to GitHub:', err);
+    console.warn('Client-side GitHub commit notice, trying server sync endpoint:', err);
+
+    // Try server sync proxy endpoint
+    try {
+      const serverRes = await fetch('/api/github-sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: commitMessage }),
+      });
+      if (serverRes.ok) {
+        const sData = await serverRes.json();
+        if (sData.success) {
+          return {
+            success: true,
+            message: sData.message || 'Synced to GitHub via server!',
+            commitUrl: sData.commitUrl,
+          };
+        }
+      }
+    } catch {}
+
     return {
       success: false,
-      message: err.message || 'Failed to push Excel file to GitHub.',
+      message: err.message || 'Failed to push Excel file to GitHub. Please check token permissions.',
     };
   }
 }
