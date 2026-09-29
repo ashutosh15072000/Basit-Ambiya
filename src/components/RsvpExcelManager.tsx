@@ -48,12 +48,14 @@ import {
   toggleGuestEventCheckIn,
   normalizeEventName,
   formatDateTime,
+  fetchAllRsvps,
 } from '../services/rsvpExcelService';
 import {
   WeddingWish,
   getStoredWishes,
   deleteWeddingWish,
   pushWishesToGitHub,
+  fetchAllPublicWishes,
 } from '../services/wishesService';
 import {
   ALL_FUNCTIONS,
@@ -61,6 +63,7 @@ import {
   CardImageOption,
   buildInviteUrl,
   buildWhatsAppMessage,
+  buildGuestPassWhatsAppMessage,
   getInvitedFunctionsDescription,
   getFunctionCardImage,
 } from '../utils/invitationConfig';
@@ -279,6 +282,49 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
     window.open(whatsappUrl, '_blank');
   };
 
+  const handleShareGuestPass = (rsvp: RsvpRecord) => {
+    const timestamp = new Date(rsvp.submitted_at).getTime();
+    const passId = rsvp.checked_in_pass_id || generatePassId(rsvp.guest_name, timestamp);
+    const events = rsvp.events.length > 0 ? rsvp.events : ['All Wedding Celebrations'];
+
+    let baseUrl = 'https://basit-ambiya.wedding/';
+    if (typeof window !== 'undefined') {
+      try {
+        const cur = new URL(window.location.href);
+        baseUrl = `${cur.origin}${cur.pathname}`;
+      } catch {
+        baseUrl = `${window.location.origin}${window.location.pathname || '/'}`;
+      }
+    }
+    const params = new URLSearchParams();
+    params.set('checkin', 'verified');
+    params.set('pass', passId);
+    params.set('name', rsvp.guest_name);
+    params.set('guests', String(rsvp.guest_count || 1));
+    params.set('events', events.join('|'));
+    params.set('t', String(timestamp));
+
+    const separator = baseUrl.includes('?') ? '&' : '?';
+    const passUrl = `${baseUrl}${separator}${params.toString()}`;
+
+    const text = buildGuestPassWhatsAppMessage(
+      rsvp.guest_name,
+      passId,
+      rsvp.guest_count,
+      events,
+      passUrl
+    );
+
+    try {
+      if (navigator?.clipboard?.writeText) {
+        navigator.clipboard.writeText(text);
+      }
+    } catch {}
+
+    const whatsappUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
+    window.open(whatsappUrl, '_blank');
+  };
+
   const handleDownloadCardImage = async (
     functionIds: number[],
     customCard?: { path: string; filename: string; title: string }
@@ -347,15 +393,43 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
     } catch {}
   };
 
-  const loadData = () => {
+  const loadData = async () => {
+    // 1. Load immediate local cache
     setRsvps(getStoredRsvps());
     setWishes(getStoredWishes());
     setGhConfig(getGitHubConfig());
+
+    // 2. Fetch fresh submissions from server & GitHub in real time
+    try {
+      const [remoteRsvps, remoteWishes] = await Promise.all([
+        fetchAllRsvps().catch(() => getStoredRsvps()),
+        fetchAllPublicWishes().catch(() => getStoredWishes()),
+      ]);
+      if (Array.isArray(remoteRsvps)) {
+        setRsvps(remoteRsvps);
+      }
+      if (Array.isArray(remoteWishes)) {
+        setWishes(remoteWishes);
+      }
+    } catch (e) {
+      console.warn('Real-time sync notice:', e);
+    }
   };
 
   useEffect(() => {
     if (isOpen) {
       loadData();
+      // Auto-poll every 5 seconds while Admin panel is open to receive new RSVPs from any phone immediately
+      const interval = setInterval(() => {
+        fetchAllRsvps().then((latest) => {
+          if (Array.isArray(latest)) setRsvps(latest);
+        }).catch(() => {});
+        fetchAllPublicWishes().then((latest) => {
+          if (Array.isArray(latest)) setWishes(latest);
+        }).catch(() => {});
+      }, 5000);
+
+      return () => clearInterval(interval);
     }
   }, [isOpen]);
 
@@ -558,7 +632,7 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
     }
   };
 
-  const handleSaveSettings = (e: React.FormEvent) => {
+  const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     const sanitized = sanitizeGitHubConfig(ghConfig);
     saveGitHubConfig(sanitized);
@@ -566,8 +640,42 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
     setShowSettings(false);
     setSyncFeedback({
       type: 'success',
-      message: 'GitHub settings saved successfully!',
+      message: 'GitHub settings saved! Syncing Excel spreadsheet & wishes now...',
     });
+
+    // Auto-sync immediately after saving
+    try {
+      setIsSyncing(true);
+      const result = await pushExcelToGitHub(rsvps, sanitized);
+      const wishesResult = await pushWishesToGitHub(getStoredWishes(), sanitized).catch(() => ({
+        success: false,
+        message: '',
+        commitUrl: undefined as string | undefined,
+      }));
+      setIsSyncing(false);
+
+      if (result.success || wishesResult.success) {
+        setSyncFeedback({
+          type: 'success',
+          message: result.success
+            ? `${result.message} & Wishes JSON synced!`
+            : wishesResult.message || 'Synced to GitHub!',
+          commitUrl: result.commitUrl || wishesResult.commitUrl,
+        });
+        setGhConfig(getGitHubConfig());
+      } else {
+        setSyncFeedback({
+          type: 'error',
+          message: `Saved settings, but initial sync had notice: ${result.message}`,
+        });
+      }
+    } catch (syncErr: any) {
+      setIsSyncing(false);
+      setSyncFeedback({
+        type: 'error',
+        message: `Saved settings. Sync error: ${syncErr.message || 'Check token permissions.'}`,
+      });
+    }
   };
 
   const handleTestConnection = async () => {
@@ -580,6 +688,16 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
         type: 'success',
         message: result.message,
       });
+      if (result.repoDetails) {
+        const updated = sanitizeGitHubConfig({
+          ...ghConfig,
+          owner: result.repoDetails.owner || ghConfig.owner,
+          repo: result.repoDetails.repo || ghConfig.repo,
+          branch: result.repoDetails.default_branch || ghConfig.branch,
+        });
+        setGhConfig(updated);
+        saveGitHubConfig(updated);
+      }
     } else {
       setTestFeedback({
         type: 'error',
@@ -890,6 +1008,7 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
                 onClick={handleSyncToGitHub}
                 disabled={isSyncing}
                 className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#24292f] hover:bg-[#1b1f23] text-white font-cinzel text-xs uppercase font-bold tracking-wider shadow-md transition-all cursor-pointer disabled:opacity-50"
+                title="Push all RSVP records and wishes to GitHub repository immediately"
               >
                 {isSyncing ? (
                   <Loader2 className="w-4 h-4 animate-spin text-gold-soft" />
@@ -897,6 +1016,25 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
                   <Github className="w-4 h-4 text-gold-soft" />
                 )}
                 {isSyncing ? 'Pushing to GitHub...' : 'Sync Excel to GitHub'}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowSettings(!showSettings)}
+                className={`inline-flex items-center gap-2 px-3.5 py-2.5 rounded-xl font-cinzel text-xs uppercase font-bold tracking-wider shadow-md transition-all cursor-pointer border ${
+                  ghConfig.token && ghConfig.owner && ghConfig.repo
+                    ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border-emerald-400'
+                    : 'bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-400 animate-pulse'
+                }`}
+                title="Configure GitHub Repository, Token and Auto-Sync"
+              >
+                <Settings className="w-4 h-4 text-emerald-800" />
+                <span>GitHub Config</span>
+                <span
+                  className={`w-2 h-2 rounded-full ${
+                    ghConfig.token && ghConfig.owner && ghConfig.repo ? 'bg-emerald-500' : 'bg-amber-500'
+                  }`}
+                />
               </button>
             </div>
 
@@ -1274,27 +1412,38 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
                         </td>
                         <td className="p-3 text-center">
                           {rsvp.attending === 'yes' ? (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const pass: CheckInPassData = {
-                                  passId: generatePassId(rsvp.guest_name, new Date(rsvp.submitted_at).getTime()),
-                                  guestName: rsvp.guest_name,
-                                  guestCount: rsvp.guest_count,
-                                  phone: rsvp.phone || undefined,
-                                  events: rsvp.events.length > 0 ? rsvp.events : ['Wedding Celebrations'],
-                                  dietary: rsvp.dietary || undefined,
-                                  timestamp: new Date(rsvp.submitted_at).getTime(),
-                                  verified: true,
-                                };
-                                setViewPassGuest(pass);
-                              }}
-                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-cinzel font-bold text-emerald-900 bg-emerald-100 hover:bg-emerald-200 transition-colors cursor-pointer"
-                              title={`View/Print QR Check-In Pass for ${rsvp.guest_name}`}
-                            >
-                              <QrCode className="w-3.5 h-3.5 text-emerald-700" />
-                              <span>Pass</span>
-                            </button>
+                            <div className="inline-flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const pass: CheckInPassData = {
+                                    passId: rsvp.checked_in_pass_id || generatePassId(rsvp.guest_name, new Date(rsvp.submitted_at).getTime()),
+                                    guestName: rsvp.guest_name,
+                                    guestCount: rsvp.guest_count,
+                                    phone: rsvp.phone || undefined,
+                                    events: rsvp.events.length > 0 ? rsvp.events : ['Wedding Celebrations'],
+                                    dietary: rsvp.dietary || undefined,
+                                    timestamp: new Date(rsvp.submitted_at).getTime(),
+                                    verified: true,
+                                  };
+                                  setViewPassGuest(pass);
+                                }}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-cinzel font-bold text-emerald-900 bg-emerald-100 hover:bg-emerald-200 transition-colors cursor-pointer"
+                                title={`View/Print QR Check-In Pass for ${rsvp.guest_name}`}
+                              >
+                                <QrCode className="w-3.5 h-3.5 text-emerald-700" />
+                                <span>Pass</span>
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => handleShareGuestPass(rsvp)}
+                                className="p-1 rounded-lg text-white bg-emerald-600 hover:bg-emerald-700 transition-colors cursor-pointer shadow-2xs"
+                                title={`Send formatted Entry Pass message to ${rsvp.guest_name} on WhatsApp`}
+                              >
+                                <Share2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
                           ) : (
                             <span className="text-foreground/40 text-[11px]">—</span>
                           )}
@@ -2085,6 +2234,7 @@ export const RsvpExcelManager: React.FC<RsvpExcelManagerProps> = ({ isOpen, onCl
               passData={viewPassGuest}
               onBackOrEdit={() => setViewPassGuest(null)}
               showBackOption={true}
+              isAdmin={true}
             />
           </div>
         </div>
