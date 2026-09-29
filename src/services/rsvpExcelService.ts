@@ -47,12 +47,12 @@ const STORAGE_KEY_RSVPS = 'wedding_rsvps';
 const STORAGE_KEY_GH_CONFIG = 'wedding_github_sync_config';
 
 const DEFAULT_GH_CONFIG: GitHubSyncConfig = {
-  enabled: false,
+  enabled: true,
   owner: 'ashutosh15072000',
   repo: 'Basit-Ambiya',
   branch: 'main',
   filePath: 'wedding-rsvps.xlsx',
-  token: '',
+  token: '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',
   autoSyncOnSubmit: true,
 };
 
